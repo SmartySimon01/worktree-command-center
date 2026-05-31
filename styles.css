@@ -1,0 +1,902 @@
+/* Claude OS Command Center — v0.2 styles (smoother fonts) */
+
+.cos-container {
+	padding: 16px;
+	background: var(--background-primary);
+	/* Smoother fonts — Inter / system sans, tabular-nums for numbers. */
+	font-family: 'Inter', -apple-system, 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+	text-rendering: optimizeLegibility;
+	/* Amber brand accent — overrides Obsidian's theme accent ONLY inside
+	   the command-center view. Cascades to all `var(--interactive-accent)`
+	   lookups below. */
+	--cos-accent: #f5a623;
+	--cos-accent-hover: #ffb84d;
+	--cos-accent-dim: rgba(245, 166, 35, 0.18);
+	--interactive-accent: var(--cos-accent);
+	--interactive-accent-hover: var(--cos-accent-hover);
+}
+
+/* ========== Header row ========== */
+
+.cos-header-row {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	margin-bottom: 16px;
+}
+
+.cos-header {
+	margin: 0;
+	flex: 1;
+	letter-spacing: 0.03em;
+	color: var(--text-normal);
+	font-size: 16px;
+	font-weight: 600;
+	text-transform: uppercase;
+}
+
+.cos-refresh-all {
+	background: var(--cos-accent);
+	color: #0a0a0a;
+	border: 0;
+	padding: 7px 14px;
+	border-radius: 5px;
+	cursor: pointer;
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.05em;
+	transition: filter 0.15s;
+}
+
+.cos-refresh-all:hover:not(:disabled) { filter: brightness(1.1); }
+.cos-refresh-all:disabled { cursor: wait; opacity: 0.6; }
+
+/* ========== Tab bar ========== */
+
+.cos-tab-bar {
+	display: flex;
+	gap: 2px;
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	padding: 3px;
+	margin-bottom: 16px;
+}
+
+.cos-tab {
+	flex: 1;
+	background: transparent;
+	border: 0;
+	padding: 8px 14px;
+	color: var(--text-muted);
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.05em;
+	cursor: pointer;
+	border-radius: 4px;
+	transition: background 0.15s, color 0.15s;
+}
+
+.cos-tab:hover:not(.cos-tab-active) {
+	background: var(--background-secondary-alt);
+	color: var(--text-normal);
+}
+
+.cos-tab-active {
+	background: var(--cos-accent);
+	color: #0a0a0a;
+}
+
+/* ========== Coming-soon placeholder ========== */
+
+.cos-coming-soon {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding: 80px 40px;
+	color: var(--text-muted);
+	text-align: center;
+	min-height: 400px;
+}
+
+.cos-coming-soon-icon { font-size: 48px; margin-bottom: 16px; opacity: 0.6; }
+.cos-coming-soon-title {
+	margin: 0 0 8px;
+	letter-spacing: 0.04em;
+	color: var(--text-normal);
+}
+.cos-coming-soon-sub { margin: 0 0 6px; font-size: 13px; color: var(--text-muted); }
+.cos-coming-soon-detail { margin: 0; font-size: 12px; color: var(--text-faint); max-width: 540px; line-height: 1.6; }
+
+/* ========== Row layouts ========== */
+
+.cos-row { display: grid; gap: 10px; margin-bottom: 12px; }
+.cos-row-hero { grid-template-columns: 1fr 1fr 1fr; }
+.cos-row-tracker { grid-template-columns: repeat(4, 1fr); }
+.cos-row-action { grid-template-columns: repeat(3, 1fr); }
+.cos-row-widget { grid-template-columns: 1fr 1fr; }
+.cos-row-widget-full { grid-template-columns: 1fr; }
+
+/* ========== Base tile (used for widget tiles) ========== */
+
+.cos-tile {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	background: var(--background-secondary);
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	transition: border-color 0.15s;
+}
+
+.cos-tile:hover { border-color: var(--background-modifier-border-hover); }
+
+.cos-tile-header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 8px 12px;
+	border-bottom: 1px solid var(--background-modifier-border);
+	background: var(--background-secondary-alt);
+}
+
+.cos-tile-title {
+	margin: 0;
+	flex: 1;
+	font-size: 11px;
+	letter-spacing: 0.05em;
+	text-transform: uppercase;
+	color: var(--text-muted);
+	font-weight: 600;
+}
+
+.cos-tile-timestamp {
+	font-size: 10.5px;
+	color: var(--text-faint);
+	font-style: italic;
+}
+
+.cos-tile-refresh {
+	background: transparent;
+	border: 0;
+	cursor: pointer;
+	font-size: 13px;
+	padding: 2px 6px;
+	border-radius: 3px;
+	color: var(--text-muted);
+	transition: background 0.15s, color 0.15s;
+}
+
+.cos-tile-refresh:hover:not(:disabled) {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.cos-tile-refresh:disabled { cursor: wait; }
+
+.cos-tile-title-clickable {
+	cursor: pointer;
+	transition: color 0.15s;
+}
+.cos-tile-title-clickable:hover { color: var(--cos-accent); }
+
+.cos-tile-expand {
+	background: transparent;
+	border: 0;
+	cursor: pointer;
+	font-size: 12px;
+	padding: 2px 6px;
+	border-radius: 3px;
+	color: var(--text-muted);
+	transition: background 0.15s, color 0.15s;
+}
+.cos-tile-expand:hover {
+	background: var(--background-modifier-hover);
+	color: var(--cos-accent);
+}
+
+.cos-tile-body { padding: 10px 12px; overflow-y: auto; flex: 1; font-size: 12.5px; line-height: 1.5; }
+
+.cos-row-widget .cos-tile-body,
+.cos-row-widget-full .cos-tile-body { min-height: 200px; max-height: 420px; }
+
+.cos-tile-empty { color: var(--text-muted); font-style: italic; }
+
+/* ========== Hero tile (big-number KPI) ========== */
+
+.cos-hero { border-left-width: 3px; }
+
+.cos-hero[data-cos-color="green"]   { border-left-color: var(--color-green); }
+.cos-hero[data-cos-color="amber"]   { border-left-color: var(--cos-accent); }
+.cos-hero[data-cos-color="red"]     { border-left-color: var(--color-red); }
+.cos-hero[data-cos-color="muted"]   { border-left-color: var(--background-modifier-border); }
+.cos-hero[data-cos-color="default"] { border-left-color: var(--cos-accent); }
+
+.cos-hero .cos-tile-body { padding: 12px 14px 14px; }
+
+.cos-hero-value {
+	font-size: 30px;
+	font-weight: 700;
+	letter-spacing: -0.02em;
+	font-variant-numeric: tabular-nums;
+	color: var(--text-normal);
+	line-height: 1.1;
+	margin-bottom: 4px;
+}
+
+.cos-hero[data-cos-color="green"] .cos-hero-value   { color: var(--color-green); }
+.cos-hero[data-cos-color="amber"] .cos-hero-value   { color: var(--cos-accent); }
+.cos-hero[data-cos-color="red"]   .cos-hero-value   { color: var(--color-red); }
+.cos-hero[data-cos-color="muted"] .cos-hero-value   { color: var(--text-muted); }
+
+.cos-hero-sub {
+	font-size: 11px;
+	color: var(--text-muted);
+	margin-bottom: 10px;
+	font-variant-numeric: tabular-nums;
+}
+
+.cos-hero-progress {
+	position: relative;
+	height: 22px;
+	background: var(--background-primary-alt);
+	border-radius: 4px;
+	overflow: hidden;
+	box-shadow: inset 0 1px 2px rgba(0,0,0,0.2);
+}
+
+.cos-hero-progress-fill {
+	height: 100%;
+	background: linear-gradient(90deg, var(--cos-accent), var(--color-red));
+	transition: width 0.4s ease-out;
+}
+
+.cos-hero[data-cos-color="green"] .cos-hero-progress-fill {
+	background: linear-gradient(90deg, var(--color-green), var(--color-cyan));
+}
+
+.cos-hero-progress-text {
+	position: absolute;
+	left: 8px;
+	top: 4px;
+	font-size: 10.5px;
+	color: #fff;
+	z-index: 1;
+	text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+	font-variant-numeric: tabular-nums;
+}
+
+/* "+ Add hero" placeholder slot */
+.cos-hero-placeholder {
+	border: 1px dashed var(--background-modifier-border);
+	border-radius: 6px;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	min-height: 140px;
+	color: var(--text-faint);
+	cursor: pointer;
+	transition: background 0.15s, border-color 0.15s;
+}
+
+.cos-hero-placeholder:hover {
+	background: var(--background-secondary-alt);
+	border-color: var(--text-faint);
+}
+
+.cos-hero-placeholder-plus { font-size: 28px; color: var(--text-faint); }
+
+.cos-hero-placeholder-label {
+	font-size: 10.5px;
+	letter-spacing: 0.08em;
+	color: var(--text-faint);
+	margin-top: 4px;
+}
+
+/* ========== Tracker tile (compact metric) ========== */
+
+.cos-tracker .cos-tile-body { padding: 8px 12px 10px; }
+
+.cos-tracker-value {
+	font-size: 22px;
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+	color: var(--text-normal);
+	line-height: 1.15;
+	letter-spacing: -0.01em;
+}
+
+.cos-tracker[data-cos-color="green"] .cos-tracker-value { color: var(--color-green); }
+.cos-tracker[data-cos-color="amber"] .cos-tracker-value { color: var(--cos-accent); }
+.cos-tracker[data-cos-color="red"]   .cos-tracker-value { color: var(--color-red); }
+.cos-tracker[data-cos-color="muted"] .cos-tracker-value { color: var(--text-muted); }
+
+.cos-tracker-sub {
+	font-size: 10.5px;
+	color: var(--text-muted);
+	margin-top: 3px;
+	font-variant-numeric: tabular-nums;
+}
+
+/* ========== Action buttons ========== */
+
+.cos-action-wrap {
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	padding: 10px 12px;
+	margin-bottom: 14px;
+}
+
+.cos-action-label {
+	font-size: 10.5px;
+	color: var(--text-muted);
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	margin-bottom: 8px;
+	font-weight: 600;
+}
+
+.cos-action-btn {
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 5px;
+	padding: 10px 12px;
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	text-align: left;
+	color: var(--text-normal);
+	font-family: inherit;
+	transition: background 0.15s, border-color 0.15s, transform 0.05s;
+}
+
+.cos-action-btn:hover:not(:disabled) {
+	background: var(--background-secondary-alt);
+	border-color: var(--cos-accent);
+}
+
+.cos-action-btn:active:not(:disabled) { transform: translateY(1px); }
+.cos-action-btn:disabled { cursor: wait; opacity: 0.6; }
+.cos-action-btn-active {
+	background: rgba(74, 222, 128, 0.08);
+	border-color: var(--color-green);
+}
+.cos-action-btn-active .cos-action-icon { color: var(--color-green); }
+
+.cos-action-icon { font-size: 17px; flex-shrink: 0; width: 24px; text-align: center; }
+
+.cos-action-text { flex: 1; min-width: 0; }
+
+.cos-action-title { font-size: 12.5px; color: var(--text-normal); font-weight: 600; letter-spacing: 0.01em; }
+
+.cos-action-subtitle { font-size: 10.5px; color: var(--text-muted); margin-top: 1px; }
+
+/* ========== Status strip ========== */
+
+.cos-status-strip {
+	border-top: 1px solid var(--background-modifier-border);
+	margin-top: 14px;
+	padding: 8px 4px 4px;
+	display: flex;
+	gap: 16px;
+	font-size: 10.5px;
+	color: var(--text-muted);
+	letter-spacing: 0.03em;
+}
+
+.cos-status-item { display: inline-block; }
+.cos-status-ok { color: var(--color-green); }
+.cos-status-right { margin-left: auto; }
+
+/* ========== Skills page (meta hub) ========== */
+
+.cos-skill-chip {
+	padding: 5px 12px;
+	border-radius: 4px;
+	font-size: 11px;
+	font-weight: 500;
+	letter-spacing: 0.03em;
+	cursor: pointer;
+	background: var(--background-secondary);
+	color: var(--text-muted);
+	border: 1px solid var(--background-modifier-border);
+	transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.cos-skill-chip:hover {
+	background: var(--background-secondary-alt);
+	color: var(--text-normal);
+}
+.cos-skill-chip-active {
+	background: var(--cos-accent);
+	color: #0a0a0a;
+	border-color: var(--cos-accent);
+	font-weight: 600;
+}
+
+.cos-skill-grid {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 10px;
+}
+
+.cos-skill-card {
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	padding: 12px 14px;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	transition: border-color 0.15s, background 0.15s;
+}
+.cos-skill-card:hover {
+	border-color: var(--background-modifier-border-hover);
+}
+
+.cos-skill-badge {
+	display: inline-block;
+	padding: 2px 8px;
+	border-radius: 3px;
+	font-size: 9.5px;
+	font-weight: 600;
+	color: #fff;
+	letter-spacing: 0.04em;
+	width: fit-content;
+	margin-bottom: 4px;
+}
+
+.cos-skill-name {
+	color: var(--text-normal);
+	font-size: 13px;
+	font-weight: 600;
+	letter-spacing: 0.005em;
+}
+
+.cos-skill-desc {
+	color: var(--text-muted);
+	font-size: 11px;
+	line-height: 1.45;
+	min-height: 30px;
+}
+
+.cos-skill-actions {
+	display: flex;
+	gap: 6px;
+	margin-top: 6px;
+}
+
+.cos-skill-run, .cos-skill-edit {
+	flex: 1;
+	padding: 5px 8px;
+	border-radius: 3px;
+	font-size: 11px;
+	font-weight: 600;
+	cursor: pointer;
+	border: 1px solid var(--background-modifier-border);
+}
+.cos-skill-run {
+	background: var(--cos-accent);
+	color: #0a0a0a;
+	border: 0;
+}
+.cos-skill-run:hover:not(:disabled) { filter: brightness(1.12); }
+.cos-skill-run:disabled { opacity: 0.6; cursor: wait; }
+.cos-skill-edit {
+	background: var(--background-primary);
+	color: var(--text-normal);
+}
+.cos-skill-edit:hover {
+	background: var(--background-secondary-alt);
+	border-color: var(--cos-accent);
+}
+
+.cos-skill-lastrun {
+	color: var(--text-faint);
+	font-size: 9.5px;
+	margin-top: 4px;
+}
+
+.cos-skill-card-add {
+	border-style: dashed;
+	border-color: var(--background-modifier-border);
+	background: transparent;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	min-height: 130px;
+	cursor: pointer;
+}
+.cos-skill-card-add:hover {
+	background: var(--background-secondary-alt);
+	border-color: var(--cos-accent);
+}
+.cos-skill-card-plus {
+	font-size: 26px;
+	color: var(--text-faint);
+}
+.cos-skill-card-add-label {
+	font-size: 11px;
+	color: var(--text-faint);
+	letter-spacing: 0.06em;
+	margin-top: 4px;
+}
+
+/* Panic Stop button — sits next to Refresh All in the header */
+.cos-stop-all {
+	background: var(--background-modifier-error, #5a1d1d);
+	color: var(--text-on-accent, #ffffff);
+	border: 0;
+	padding: 6px 12px;
+	border-radius: 4px;
+	cursor: pointer;
+	font-size: 13px;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+}
+.cos-stop-all:hover {
+	filter: brightness(1.15);
+}
+
+/* --- xterm.js --- */
+/**
+ * Copyright (c) 2014 The xterm.js authors. All rights reserved.
+ * Copyright (c) 2012-2013, Christopher Jeffrey (MIT License)
+ * https://github.com/chjj/term.js
+ * @license MIT
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ *
+ * Originally forked from (with the author's permission):
+ *   Fabrice Bellard's javascript vt100 for jslinux:
+ *   http://bellard.org/jslinux/
+ *   Copyright (c) 2011 Fabrice Bellard
+ *   The original design remains. The terminal itself
+ *   has been extended to include xterm CSI codes, among
+ *   other features.
+ */
+
+/**
+ *  Default styles for xterm.js
+ */
+
+.xterm {
+    cursor: text;
+    position: relative;
+    user-select: none;
+    -ms-user-select: none;
+    -webkit-user-select: none;
+}
+
+.xterm.focus,
+.xterm:focus {
+    outline: none;
+}
+
+.xterm .xterm-helpers {
+    position: absolute;
+    top: 0;
+    /**
+     * The z-index of the helpers must be higher than the canvases in order for
+     * IMEs to appear on top.
+     */
+    z-index: 5;
+}
+
+.xterm .xterm-helper-textarea {
+    padding: 0;
+    border: 0;
+    margin: 0;
+    /* Move textarea out of the screen to the far left, so that the cursor is not visible */
+    position: absolute;
+    opacity: 0;
+    left: -9999em;
+    top: 0;
+    width: 0;
+    height: 0;
+    z-index: -5;
+    /** Prevent wrapping so the IME appears against the textarea at the correct position */
+    white-space: nowrap;
+    overflow: hidden;
+    resize: none;
+}
+
+.xterm .composition-view {
+    /* TODO: Composition position got messed up somewhere */
+    background: #000;
+    color: #FFF;
+    display: none;
+    position: absolute;
+    white-space: nowrap;
+    z-index: 1;
+}
+
+.xterm .composition-view.active {
+    display: block;
+}
+
+.xterm .xterm-viewport {
+    /* On OS X this is required in order for the scroll bar to appear fully opaque */
+    background-color: #000;
+    overflow-y: scroll;
+    cursor: default;
+    position: absolute;
+    right: 0;
+    left: 0;
+    top: 0;
+    bottom: 0;
+}
+
+.xterm .xterm-screen {
+    position: relative;
+}
+
+.xterm .xterm-screen canvas {
+    position: absolute;
+    left: 0;
+    top: 0;
+}
+
+.xterm-char-measure-element {
+    display: inline-block;
+    visibility: hidden;
+    position: absolute;
+    top: 0;
+    left: -9999em;
+    line-height: normal;
+}
+
+.xterm.enable-mouse-events {
+    /* When mouse events are enabled (eg. tmux), revert to the standard pointer cursor */
+    cursor: default;
+}
+
+.xterm.xterm-cursor-pointer,
+.xterm .xterm-cursor-pointer {
+    cursor: pointer;
+}
+
+.xterm.column-select.focus {
+    /* Column selection mode */
+    cursor: crosshair;
+}
+
+.xterm .xterm-accessibility:not(.debug),
+.xterm .xterm-message {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    right: 0;
+    z-index: 10;
+    color: transparent;
+    pointer-events: none;
+}
+
+.xterm .xterm-accessibility-tree:not(.debug) *::selection {
+  color: transparent;
+}
+
+.xterm .xterm-accessibility-tree {
+  font-family: monospace;
+  user-select: text;
+  white-space: pre;
+}
+
+.xterm .xterm-accessibility-tree > div {
+  transform-origin: left;
+  width: fit-content;
+}
+
+.xterm .live-region {
+    position: absolute;
+    left: -9999px;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+}
+
+.xterm-dim {
+    /* Dim should not apply to background, so the opacity of the foreground color is applied
+     * explicitly in the generated class and reset to 1 here */
+    opacity: 1 !important;
+}
+
+.xterm-underline-1 { text-decoration: underline; }
+.xterm-underline-2 { text-decoration: double underline; }
+.xterm-underline-3 { text-decoration: wavy underline; }
+.xterm-underline-4 { text-decoration: dotted underline; }
+.xterm-underline-5 { text-decoration: dashed underline; }
+
+.xterm-overline {
+    text-decoration: overline;
+}
+
+.xterm-overline.xterm-underline-1 { text-decoration: overline underline; }
+.xterm-overline.xterm-underline-2 { text-decoration: overline double underline; }
+.xterm-overline.xterm-underline-3 { text-decoration: overline wavy underline; }
+.xterm-overline.xterm-underline-4 { text-decoration: overline dotted underline; }
+.xterm-overline.xterm-underline-5 { text-decoration: overline dashed underline; }
+
+.xterm-strikethrough {
+    text-decoration: line-through;
+}
+
+.xterm-screen .xterm-decoration-container .xterm-decoration {
+	z-index: 6;
+	position: absolute;
+}
+
+.xterm-screen .xterm-decoration-container .xterm-decoration.xterm-decoration-top-layer {
+	z-index: 7;
+}
+
+.xterm-decoration-overview-ruler {
+    z-index: 8;
+    position: absolute;
+    top: 0;
+    right: 0;
+    pointer-events: none;
+}
+
+.xterm-decoration-top {
+    z-index: 2;
+    position: relative;
+}
+
+
+
+/* Derived from vs/base/browser/ui/scrollbar/media/scrollbar.css */
+
+/* xterm.js customization: Override xterm's cursor style */
+.xterm .xterm-scrollable-element > .scrollbar {
+    cursor: default;
+}
+
+/* Arrows */
+.xterm .xterm-scrollable-element > .scrollbar > .scra {
+	cursor: pointer;
+	font-size: 11px !important;
+}
+
+.xterm .xterm-scrollable-element > .visible {
+	opacity: 1;
+
+	/* Background rule added for IE9 - to allow clicks on dom node */
+	background:rgba(0,0,0,0);
+
+	transition: opacity 100ms linear;
+	/* In front of peek view */
+	z-index: 11;
+}
+.xterm .xterm-scrollable-element > .invisible {
+	opacity: 0;
+	pointer-events: none;
+}
+.xterm .xterm-scrollable-element > .invisible.fade {
+	transition: opacity 800ms linear;
+}
+
+/* Scrollable Content Inset Shadow */
+.xterm .xterm-scrollable-element > .shadow {
+	position: absolute;
+	display: none;
+}
+.xterm .xterm-scrollable-element > .shadow.top {
+	display: block;
+	top: 0;
+	left: 3px;
+	height: 3px;
+	width: 100%;
+	box-shadow: var(--vscode-scrollbar-shadow, #000) 0 6px 6px -6px inset;
+}
+.xterm .xterm-scrollable-element > .shadow.left {
+	display: block;
+	top: 3px;
+	left: 0;
+	height: 100%;
+	width: 3px;
+	box-shadow: var(--vscode-scrollbar-shadow, #000) 6px 0 6px -6px inset;
+}
+.xterm .xterm-scrollable-element > .shadow.top-left-corner {
+	display: block;
+	top: 0;
+	left: 0;
+	height: 3px;
+	width: 3px;
+}
+.xterm .xterm-scrollable-element > .shadow.top.left {
+	box-shadow: var(--vscode-scrollbar-shadow, #000) 6px 0 6px -6px inset;
+}
+
+/* --- worktree terminals --- */
+.cos-terminals-controls { display:flex; gap:10px; align-items:center; flex-wrap:wrap; padding:10px 12px; background:var(--background-secondary); border-radius:8px; margin-bottom:14px; }
+.cos-terminals-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(360px,1fr)); gap:12px; }
+.cos-term-tile { display:flex; flex-direction:column; height:280px; background:#0e0f17; border:1px solid var(--background-modifier-border); border-radius:8px; overflow:hidden; }
+.cos-term-head { display:flex; justify-content:space-between; align-items:center; padding:4px 8px; font-size:11px; color:var(--text-muted); background:var(--background-secondary); }
+.cos-term-head button { background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:13px; }
+.cos-term-body { flex:1; min-height:0; padding:4px; }
+.cos-play-btn { margin-left:auto; background:#1f7a4d; color:#fff; border:none; border-radius:6px; padding:6px 14px; font-weight:600; cursor:pointer; }
+
+/* --- bubbling stage (phase 2) --- */
+.cos-terminals-stage { position:relative; height:70vh; min-height:360px; background:#0b0c14; border:1px solid var(--background-modifier-border); border-radius:10px; overflow:hidden; }
+.cos-terminals-stage.cos-terminals-max { position:fixed; inset:0; height:auto; z-index:1000; border-radius:0; }
+.cos-terminals-stage .cos-term-tile { position:absolute; transition:left .5s cubic-bezier(.22,.61,.36,1), top .5s cubic-bezier(.22,.61,.36,1), width .5s cubic-bezier(.22,.61,.36,1), height .5s cubic-bezier(.22,.61,.36,1), box-shadow .35s; }
+.cos-terminals-stage .cos-term-tile.centered { z-index:50; box-shadow:0 0 0 2px #2fae6e, 0 16px 50px rgba(0,0,0,.7); }
+.cos-term-badge { display:none; background:#4a3f73; color:#fff; font-weight:700; font-size:11px; padding:1px 7px; border-radius:5px; margin-right:6px; }
+.cos-maximize-btn { background:var(--background-modifier-border); border:none; border-radius:6px; padding:6px 12px; cursor:pointer; color:var(--text-normal); }
+.cos-lock-btn { background:var(--background-modifier-border); border:none; border-radius:6px; padding:6px 12px; cursor:pointer; color:var(--text-normal); }
+.cos-lock-btn.cos-lock-on { background:var(--cos-accent, #f5a623); color:#0a0a0a; font-weight:600; }
+
+/* --- maximized stage: in-overlay minimize button --- */
+.cos-stage-restore { display:none; position:absolute; top:8px; right:8px; z-index:60; background:rgba(20,21,31,.92); color:#fff; border:1px solid #34374d; border-radius:6px; padding:5px 12px; cursor:pointer; }
+.cos-terminals-stage.cos-terminals-max .cos-stage-restore { display:block; }
+/* --- maximized: keep the controls bar pinned above the fullscreen stage --- */
+.cos-terminals-controls.cos-controls-max { position:fixed; top:0; left:0; right:0; z-index:1001; margin:0; border-radius:0; box-shadow:0 2px 12px rgba(0,0,0,.5); }
+
+/* --- coordination board panel --- */
+.cos-coord-board { border: 1px solid var(--background-modifier-border); border-radius: 6px; margin: 6px 0; padding: 6px 8px; font-size: 11px; background: var(--background-secondary); }
+.cos-coord-head { cursor: pointer; font-weight: 600; opacity: 0.85; }
+.cos-coord-board.collapsed .cos-coord-locks, .cos-coord-board.collapsed .cos-coord-feed { display: none; }
+.cos-coord-locks { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.cos-coord-empty { opacity: 0.5; }
+.cos-coord-lock { padding: 2px 8px; border-radius: 10px; background: var(--background-modifier-success); white-space: nowrap; }
+.cos-coord-lock.stale { background: var(--background-modifier-error); }
+.cos-coord-feed { max-height: 96px; overflow-y: auto; font-family: var(--font-monospace); opacity: 0.8; }
+.cos-coord-row { padding: 1px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* --- chat: tile selection --- */
+.cos-term-tile.cos-term-selected { box-shadow: 0 0 0 3px var(--cos-accent, #f5a623), 0 16px 50px rgba(0,0,0,.5); }
+.cos-select-on { background: var(--cos-accent, #f5a623); color: #0a0a0a; font-weight: 600; }
+.cos-chat-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* --- chat tile (iMessage group chat in the stage) --- */
+.cos-chat-tile { position:absolute; display:flex; flex-direction:column; background:#0e0f17; border:1px solid var(--background-modifier-border); border-radius:10px; overflow:hidden; transition:left .5s cubic-bezier(.22,.61,.36,1), top .5s cubic-bezier(.22,.61,.36,1), width .5s cubic-bezier(.22,.61,.36,1), height .5s cubic-bezier(.22,.61,.36,1); }
+.cos-chat-tile.centered { z-index:50; box-shadow:0 0 0 2px #4a8cff, 0 16px 50px rgba(0,0,0,.7); }
+.cos-chat-tile.paused { box-shadow:0 0 0 2px var(--cos-accent, #f5a623), 0 16px 50px rgba(0,0,0,.7); }
+.cos-chat-head { display:flex; align-items:center; gap:10px; padding:8px 10px; border-bottom:1px solid var(--background-modifier-border); font-weight:600; font-size:12px; color:#fff; }
+.cos-chat-head button { margin-left:auto; background:rgba(255,255,255,.08); border:0; color:#fff; border-radius:5px; padding:3px 9px; cursor:pointer; font-size:11px; }
+.cos-chat-head button + button { margin-left:6px; }
+.cos-chat-body { flex:1; overflow-y:auto; padding:10px; display:flex; flex-direction:column; gap:6px; }
+.cos-chat-msg { max-width:78%; padding:6px 10px; border-radius:12px; font-size:12px; line-height:1.4; }
+.cos-chat-msg .cos-chat-who { font-size:10px; opacity:.6; margin-bottom:1px; }
+.cos-chat-msg.them { align-self:flex-start; background:#26283a; color:#e9eaf2; }
+.cos-chat-msg.me { align-self:flex-end; background:#2f6df6; color:#fff; }
+.cos-chat-msg.muted { align-self:center; background:transparent; color:var(--text-faint); font-size:11px; font-style:italic; }
+.cos-chat-banner { background:rgba(245,166,35,.12); color:var(--cos-accent, #f5a623); font-size:11.5px; font-weight:600; }
+.cos-chat-banner:not(:empty) { padding:6px 10px; }
+.cos-chat-banner-title { padding:6px 10px; font-size:12px; font-weight:600; color:var(--cos-accent, #f5a623); }
+.cos-chat-prompt { margin:0; padding:0 10px 8px; font-size:11px; font-family:var(--font-monospace); color:#cfd2e0; white-space:pre-wrap; max-height:90px; overflow:auto; }
+/* input-request cards inside the chat (bash approvals etc. — answered here, not in the terminal) */
+.cos-chat-req { align-self:stretch; border:1px solid var(--cos-accent, #f5a623); border-radius:10px; background:rgba(245,166,35,.10); padding:9px 11px; }
+.cos-chat-req-title { color:var(--cos-accent, #f5a623); font-weight:600; font-size:12px; margin-bottom:5px; }
+.cos-chat-req-pre { margin:0 0 8px; padding:7px 9px; background:#11131d; border-radius:6px; color:#cfe3ff; font:11px/1.4 var(--font-monospace); white-space:pre-wrap; max-height:120px; overflow:auto; }
+.cos-chat-req-row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.cos-req-approve { background:#1f9d57; border:0; color:#fff; padding:6px 14px; border-radius:6px; cursor:pointer; font-weight:600; font-size:12px; }
+.cos-req-deny { background:#c0392b; border:0; color:#fff; padding:6px 14px; border-radius:6px; cursor:pointer; font-size:12px; }
+.cos-req-reply { flex:1; min-width:120px; background:#11131d; border:1px solid #34374d; color:#fff; border-radius:6px; padding:6px 9px; font-size:12px; }
+.cos-chat-inputrow { border-top:1px solid var(--background-modifier-border); padding:8px; }
+.cos-chat-tile.paused .cos-chat-inputrow { background:rgba(245,166,35,.08); }
+.cos-chat-inputrow input { width:100%; box-sizing:border-box; background:#1a1c28; border:1px solid #34374d; border-radius:18px; padding:8px 12px; color:#fff; font-size:12px; }

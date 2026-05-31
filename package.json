@@ -1,0 +1,27 @@
+{
+  "name": "worktree-command-center",
+  "version": "0.1.0",
+  "description": "Run many Claude Code sessions in parallel, each in its own git worktree, tiled in one view.",
+  "license": "MIT",
+  "author": "Ronald Fridlyand",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs",
+    "start": "npm run build && electron .",
+    "test": "vitest run",
+    "dist": "npm run build && electron-builder --win"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.41",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0",
+    "esbuild": "0.25.5",
+    "typescript": "^5.8.3",
+    "vitest": "^4.1.7"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "node-pty": "^1.1.0"
+  }
+}
