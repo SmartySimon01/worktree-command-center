@@ -210,6 +210,18 @@ export class TerminalsGrid {
 		this.repos = this.deps.repos;
 	}
 
+	/** Update the repo list and rebuild the dropdown live; preserves the current selection if
+	 *  still present, then refreshes branches for the newly-selected repo. */
+	setRepos(repos: RepoConfig[]): void {
+		this.repos = repos;
+		if (!this.repoSel) return;
+		const cur = this.repoSel.value;
+		this.repoSel.empty();
+		for (const r of this.repos) this.repoSel.createEl('option', { text: r.name, value: r.name });
+		if (this.repos.some((r) => r.name === cur)) this.repoSel.value = cur;
+		void this.refreshBranches();
+	}
+
 	private selectedRepo(): RepoConfig | undefined {
 		return this.repos.find((r) => r.name === this.repoSel?.value);
 	}
