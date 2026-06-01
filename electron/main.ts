@@ -16,11 +16,16 @@ function createWindow(): void {
 		webPreferences: {
 			nodeIntegration: true,
 			contextIsolation: false,
+			// Electron 33 sandboxes renderers by default; a sandboxed renderer has no
+			// `require` even with nodeIntegration, so the bundle dies on its first require().
+			// We load only local, trusted content, so disable the sandbox.
+			sandbox: false,
 			preload: path.join(__dirname, 'preload.js'),
 		},
 	});
 
 	win.loadFile(path.join(__dirname, '..', 'index.html'));
+	if (!app.isPackaged) win.webContents.openDevTools({ mode: 'detach' }); // dev aid; off in the installer
 
 	// IPC: return resolved paths
 	ipcMain.handle('paths', () => ({ sidecarDir, userData }));
