@@ -1,5 +1,6 @@
 import { spawn } from 'child_process';
 import * as fs from 'fs/promises';
+import * as fsSync from 'fs';
 import * as path from 'path';
 import { listBranches, createWorktree, writeReadyHook, defaultBranch, parkWorktree, reopenWorktree, type WorktreeInfo } from './worktree-manager';
 import { nextWorktreeBranch, parseWorktreeList, parseStatusPorcelain, parseAheadBehind, isParkCommitSubject, formatRegistryMarkdown, type WorktreeEntry } from './worktree-registry';
@@ -11,6 +12,8 @@ import { ChatTile } from './chat-tile';
 import { settledLayout, centeredLayout, keyForIndex, keyToIndex } from './bubble-layout';
 import { emptyState, applyKeystroke, onReady as rqReady, onSubmit as rqSubmit, onClose as rqClose, onClick as rqClick, cycleNext as rqCycleNext, cyclePrev as rqCyclePrev } from './ready-queue';
 import { partitionByHidden } from './session-partition';
+import { GodConsole } from './god-console';
+import { slug as godSlug, formatFloorSnapshot, formatFloorIndex, parseTellRequest, resolveTellTarget } from './god';
 
 export interface RepoConfig { name: string; path: string; remote?: string; group?: string; }
 
@@ -50,6 +53,12 @@ export class TerminalsGrid {
 	private chatBtn: HTMLButtonElement | null = null;
 	private chatTile: ChatTile | null = null;
 	private chatRoom: ChatRoom | null = null;
+	private godBtn: HTMLButtonElement | null = null;
+	private godConsole: GodConsole | null = null;
+	private godVisible = false;
+	private stageWrapEl: HTMLElement | null = null;
+	private floorTimer: number | null = null;
+	private godOutboxWatcher: import('fs').FSWatcher | null = null;
 	private parentEl: HTMLElement | null = null;
 	private readonly sidecarPath: string;
 	private readonly notifyScriptPath: string;
@@ -113,6 +122,10 @@ export class TerminalsGrid {
 		this.chatBtn.disabled = true;
 		this.chatBtn.addEventListener('click', () => this.openChat());
 
+		this.godBtn = controls.createEl('button', { text: '🜲 GOD', cls: 'cos-god-btn' });
+		this.godBtn.setAttribute('title', 'Open the GOD overseer console — sees the whole floor, acts on request');
+		this.godBtn.addEventListener('click', () => this.toggleGod());
+
 		const viewCode = controls.createEl('button', { text: '🧩 View Code' });
 		viewCode.addEventListener('click', () => this.openInVSCode());
 
@@ -132,24 +145,28 @@ export class TerminalsGrid {
 		this.scanTimer = window.setInterval(() => { void this.scanWorktrees().then(() => this.board?.refresh()); }, 30_000);
 		try {
 			this.coordWatcher = (await import('fs')).watch(this.coordDir, (_evt, filename) => {
-				if (filename === 'worktrees.md') return; // our own ledger write — don't rescan-loop
+				const fn = String(filename ?? '');
+				// Our own ledger write + the GOD feed dirs must never trigger a worktree rescan loop.
+				if (fn === 'worktrees.md' || fn.startsWith('floor') || fn.startsWith('god-outbox') || fn.startsWith('god-inbox')) return;
 				if (this.scanDebounce !== null) window.clearTimeout(this.scanDebounce);
 				this.scanDebounce = window.setTimeout(() => { void this.scanWorktrees().then(() => this.board?.refresh()); }, 500);
 			});
 		} catch { /* coordDir may not exist yet; the timer still covers it */ }
 
 		if (!this.stageEl) {
-			// First mount: create the stage + restore button, restore any persisted sessions.
-			this.stageEl = parent.createDiv({ cls: 'cos-terminals-stage' });
+			// First mount: create the stage (inside a dock row that can hold the GOD panel) +
+			// restore button, restore any persisted sessions.
+			this.stageWrapEl = parent.createDiv({ cls: 'cos-stage-wrap' });
+			this.stageEl = this.stageWrapEl.createDiv({ cls: 'cos-terminals-stage' });
 			// Keep Escape inside the terminal: xterm (the focused target) gets it first and
 			// forwards it to Claude; stopping it here prevents it bubbling to Obsidian.
 			this.stageEl.addEventListener('keydown', (e) => { if (e.key === 'Escape') e.stopPropagation(); });
 			await this.refreshBranches();
 			await this.restoreSessions();
 		} else {
-			// Re-mount (tab switch back): re-attach the live stage — sessions kept running.
+			// Re-mount (tab switch back): re-attach the live dock row — sessions kept running.
 			this.stageEl.toggleClass('cos-terminals-max', this.maximized);
-			parent.appendChild(this.stageEl);
+			parent.appendChild(this.stageWrapEl!);
 			await this.refreshBranches();
 			this.applyLayout();
 			this.focusCentered(); // returning to the tab puts the cursor back in the centered terminal
@@ -173,8 +190,10 @@ export class TerminalsGrid {
 		this.chatTile?.unmount();
 		this.chatTile = null;
 		this.chatRoom = null;
+		this.stopFloorFeed();
 		this.board?.unmount();
-		this.stageEl?.remove(); // detached but retained in memory (tiles + sidecars stay alive)
+		// GOD survives a tab switch (like the tiles): detach with the stage wrap, keep the session.
+		this.stageWrapEl?.remove(); // detached but retained in memory (tiles + sidecars stay alive)
 	}
 
 	private onResize = (): void => this.applyLayout();
@@ -336,6 +355,129 @@ export class TerminalsGrid {
 		this.chatTile = null;
 		this.chatRoom = null;
 		this.applyLayout();
+	}
+
+	/** Every live session GOD should see / be able to message (foreground + hidden background). */
+	private allSessions(): TerminalTile[] { return [...this.tiles, ...this.hidden]; }
+
+	/** Toggle the GOD console: spawn on first open, then just show/hide (session persists). */
+	private toggleGod(): void {
+		if (!this.godConsole) {
+			const godHomeDir = path.join(this.coordDir, '..', '.god', this.deps.group);
+			this.godConsole = new GodConsole(
+				{ repos: this.repos.map((r) => ({ name: r.name, path: r.path })), coordDir: this.coordDir, sidecarPath: this.sidecarPath, godHomeDir },
+				() => this.hideGod(),
+			);
+			if (this.stageWrapEl) this.godConsole.render(this.stageWrapEl);
+			this.godVisible = true;
+			this.startFloorFeed();
+			this.godBtn?.toggleClass('cos-god-on', true);
+			this.applyLayout();
+			this.godConsole.focus();
+			return;
+		}
+		if (this.godVisible) this.hideGod();
+		else this.showGod();
+	}
+
+	private showGod(): void {
+		this.godVisible = true;
+		this.godConsole?.setVisible(true);
+		this.startFloorFeed();
+		this.godBtn?.toggleClass('cos-god-on', true);
+		this.applyLayout();
+	}
+
+	private hideGod(): void {
+		this.godVisible = false;
+		this.godConsole?.setVisible(false);
+		this.stopFloorFeed();
+		this.godBtn?.toggleClass('cos-god-on', false);
+		this.applyLayout();
+	}
+
+	private floorDir(): string { return path.join(this.coordDir, 'floor'); }
+	private outboxDir(): string { return path.join(this.coordDir, 'god-outbox'); }
+
+	/** Begin writing terminal snapshots + watching the GOD outbox while the console is open. */
+	private startFloorFeed(): void {
+		this.writeFloorSnapshot();
+		if (this.floorTimer === null) this.floorTimer = window.setInterval(() => this.writeFloorSnapshot(), 4000);
+		try {
+			const out = this.outboxDir();
+			fsSync.mkdirSync(out, { recursive: true });
+			this.drainOutbox();
+			if (!this.godOutboxWatcher) this.godOutboxWatcher = fsSync.watch(out, () => this.drainOutbox());
+		} catch { /* outbox unavailable — snapshots still work */ }
+	}
+
+	private stopFloorFeed(): void {
+		if (this.floorTimer !== null) { window.clearInterval(this.floorTimer); this.floorTimer = null; }
+		this.godOutboxWatcher?.close(); this.godOutboxWatcher = null;
+	}
+
+	/** Dump each live session's recent output to coordDir/floor/<id>-<slug>.md + an INDEX.md;
+	 *  prune snapshots for sessions that have since closed. */
+	private writeFloorSnapshot(): void {
+		try {
+			const dir = this.floorDir();
+			fsSync.mkdirSync(dir, { recursive: true });
+			const now = Date.now();
+			const sessions = this.allSessions();
+			const live = new Set<string>(['INDEX.md']);
+			for (const t of sessions) {
+				const fname = `${t.tileId}-${godSlug(t.name)}.md`;
+				live.add(fname);
+				const body = formatFloorSnapshot(
+					{ name: t.name, repo: this.repoNameFor(t), branch: t.branch, worktreePath: t.worktreePath, ts: now },
+					t.recentOutput(),
+				);
+				fsSync.writeFileSync(path.join(dir, fname), body, 'utf8');
+			}
+			fsSync.writeFileSync(path.join(dir, 'INDEX.md'),
+				formatFloorIndex(sessions.map((t) => ({ id: t.tileId, name: t.name, repo: this.repoNameFor(t), branch: t.branch }))), 'utf8');
+			for (const f of fsSync.readdirSync(dir)) if (f.endsWith('.md') && !live.has(f)) { try { fsSync.unlinkSync(path.join(dir, f)); } catch { /* ignore */ } }
+		} catch { /* best effort */ }
+	}
+
+	/** The repo name a session belongs to (matches the scan/registry mapping). */
+	private repoNameFor(t: TerminalTile): string {
+		const e = this.lastEntries.find((x) => path.resolve(x.path) === path.resolve(t.worktreePath));
+		return e ? e.repo : '?';
+	}
+
+	/** Deliver any pending GOD→worker messages, then archive them to .done/. */
+	private drainOutbox(): void {
+		const out = this.outboxDir();
+		let files: string[] = [];
+		try { files = fsSync.readdirSync(out).filter((f) => f.endsWith('.json')); } catch { return; }
+		if (!files.length) return;
+		const sessions = this.allSessions();
+		const names = sessions.map((t) => t.name);
+		const done = path.join(out, '.done');
+		try { fsSync.mkdirSync(done, { recursive: true }); } catch { /* ignore */ }
+		for (const f of files) {
+			const full = path.join(out, f);
+			let text = '';
+			try { text = fsSync.readFileSync(full, 'utf8'); } catch { continue; }
+			const req = parseTellRequest(text);
+			if (req) {
+				const name = resolveTellTarget(req.target, names);
+				const tile = name ? sessions.find((t) => t.name === name) : undefined;
+				if (tile) tile.sendLine(req.message);
+				else this.writeGodInbox(`could not deliver to "${req.target}" — not a live terminal. Live: ${names.join(', ') || '(none)'}`);
+			}
+			try { fsSync.renameSync(full, path.join(done, f)); } catch { try { fsSync.unlinkSync(full); } catch { /* ignore */ } }
+		}
+	}
+
+	/** Leave GOD an error note he can read back. */
+	private writeGodInbox(message: string): void {
+		try {
+			const inbox = path.join(this.coordDir, 'god-inbox');
+			fsSync.mkdirSync(inbox, { recursive: true });
+			fsSync.writeFileSync(path.join(inbox, `${Date.now()}-error.md`), message + '\n', 'utf8');
+		} catch { /* best effort */ }
 	}
 
 	/** Center a tile AND give its terminal keyboard focus (so typing goes there). */
@@ -508,11 +650,13 @@ export class TerminalsGrid {
 	dispose(): void {
 		this.unmount();
 		this.board = null;
+		this.godConsole?.dispose(); this.godConsole = null;
 		for (const t of this.tiles) t.kill();
 		for (const t of this.hidden) t.kill();
 		this.tiles = [];
 		this.hidden = [];
 		this.stageEl = null;
+		this.stageWrapEl = null;
 	}
 
 	/** Park every dirty worktree of every live tile (plugin unload: accidental teardown / reload).
