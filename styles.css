@@ -840,6 +840,16 @@
 .cos-term-body { flex:1; min-height:0; padding:4px; }
 .cos-play-btn { margin-left:auto; background:#1f7a4d; color:#fff; border:none; border-radius:6px; padding:6px 14px; font-weight:600; cursor:pointer; }
 
+/* --- GOD overseer console: dock row holding the stage + the GOD panel --- */
+.cos-stage-wrap { display:flex; gap:10px; align-items:stretch; }
+.cos-stage-wrap > .cos-terminals-stage { flex:1 1 auto; min-width:0; }
+.cos-god-panel { flex:0 0 380px; display:flex; flex-direction:column; min-width:0; background:#0e0f17; border:1px solid var(--background-modifier-border); border-radius:10px; overflow:hidden; }
+.cos-god-head { display:flex; align-items:center; justify-content:space-between; padding:5px 10px; background:#171925; color:#e7c97a; font-weight:600; letter-spacing:.04em; }
+.cos-god-head button { background:transparent; border:none; color:var(--text-muted); cursor:pointer; font-size:14px; }
+.cos-god-head button:hover { color:#fff; }
+.cos-god-body { flex:1; min-height:0; padding:4px; }
+.cos-god-btn.cos-god-on { background:#3a2d10; color:#f4d35e; font-weight:600; }
+
 /* --- bubbling stage (phase 2) --- */
 .cos-terminals-stage { position:relative; height:70vh; min-height:360px; background:#0b0c14; border:1px solid var(--background-modifier-border); border-radius:10px; overflow:hidden; }
 .cos-terminals-stage.cos-terminals-max { position:fixed; inset:0; height:auto; z-index:1000; border-radius:0; }
