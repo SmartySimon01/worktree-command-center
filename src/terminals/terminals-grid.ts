@@ -10,6 +10,7 @@ import { ChatRoom } from './chat-room';
 import { ChatTile } from './chat-tile';
 import { settledLayout, centeredLayout, keyForIndex, keyToIndex } from './bubble-layout';
 import { emptyState, applyKeystroke, onReady as rqReady, onSubmit as rqSubmit, onClose as rqClose, onClick as rqClick, cycleNext as rqCycleNext, cyclePrev as rqCyclePrev } from './ready-queue';
+import { partitionByHidden } from './session-partition';
 
 export interface RepoConfig { name: string; path: string; remote?: string; group?: string; }
 
@@ -119,7 +120,12 @@ export class TerminalsGrid {
 		const refreshBtn = controls.createEl('button', { text: '⟳ Refresh' });
 		refreshBtn.addEventListener('click', () => { void this.scanWorktrees().then(() => this.board?.refresh()); });
 
-		if (!this.board) this.board = new BoardView(this.coordDir, (branch) => void this.reopenAndOpen(branch));
+		if (!this.board) this.board = new BoardView(
+			this.coordDir,
+			(branch) => void this.reopenAndOpen(branch),
+			() => this.hidden.map((t) => ({ tileId: t.tileId, name: t.name, branch: t.branch })),
+			(tileId) => this.showTile(tileId),
+		);
 		this.board.mount(parent);
 
 		void this.scanWorktrees();
@@ -472,7 +478,10 @@ export class TerminalsGrid {
 	/** Persist THIS group's currently-open sessions (called on play + on close). */
 	private async persist(): Promise<void> {
 		const all = await this.readAllSessions();
-		all[this.deps.group] = this.tiles.map((t) => t.sessionRecord());
+		all[this.deps.group] = [
+			...this.tiles.map((t) => ({ ...t.sessionRecord(), hidden: false })),
+			...this.hidden.map((t) => ({ ...t.sessionRecord(), hidden: true })),
+		];
 		try { await fs.writeFile(this.sessionsFile, JSON.stringify(all, null, 2), 'utf8'); } catch { /* best effort */ }
 	}
 
@@ -480,14 +489,16 @@ export class TerminalsGrid {
 	private async restoreSessions(): Promise<void> {
 		const all = await this.readAllSessions();
 		const recs = all[this.deps.group] ?? [];
-		for (const rec of recs) {
+		const { visible, hidden } = partitionByHidden(recs);
+		for (const rec of [...visible, ...hidden]) {
 			let exists = false;
 			try { await fs.access(rec.worktreePath); exists = true; } catch { exists = false; }
 			if (!exists) continue;
 			const tile = this.makeTile({ worktreePath: rec.worktreePath, branch: rec.branch }, rec.repoName, rec.repoPath, rec.baseBranch, true, rec.name);
 			try { await writeReadyHook(rec.worktreePath, this.notifyScriptPath, this.coordHookPath); } catch { /* best effort */ }
 			if (this.stageEl) tile.render(this.stageEl);
-			this.tiles.push(tile);
+			if (rec.hidden) { tile.setHidden(true); this.hidden.push(tile); }
+			else this.tiles.push(tile);
 		}
 		await this.persist(); // prune records whose worktree no longer exists
 		this.applyLayout();
@@ -498,7 +509,9 @@ export class TerminalsGrid {
 		this.unmount();
 		this.board = null;
 		for (const t of this.tiles) t.kill();
+		for (const t of this.hidden) t.kill();
 		this.tiles = [];
+		this.hidden = [];
 		this.stageEl = null;
 	}
 
@@ -507,7 +520,7 @@ export class TerminalsGrid {
 	 *  sessions + their live agents running. */
 	public async parkAll(): Promise<void> {
 		const iso = new Date().toISOString();
-		for (const t of this.tiles) {
+		for (const t of [...this.tiles, ...this.hidden]) {
 			try {
 				const action = await parkWorktree(t.worktreePath, iso);
 				if (action === 'parked') {
@@ -531,7 +544,7 @@ export class TerminalsGrid {
 			for (const wt of parseWorktreeList(wl.stdout)) {
 				if (path.resolve(wt.path) === path.resolve(repo.path)) continue; // skip the primary checkout
 				const status = await runCommand('git', ['status', '--porcelain'], { cwd: wt.path, timeoutMs: 8000 });
-				const tile = this.tiles.find((t) => path.resolve(t.worktreePath) === path.resolve(wt.path));
+				const tile = [...this.tiles, ...this.hidden].find((t) => path.resolve(t.worktreePath) === path.resolve(wt.path));
 				const baseRef = tile ? tile.baseBranch : this.baseOf(wt.branch);
 				const ab = await runCommand('git', ['rev-list', '--left-right', '--count', `${baseRef}...HEAD`], { cwd: wt.path, timeoutMs: 8000 });
 				const subj = await runCommand('git', ['log', '-1', '--pretty=%s'], { cwd: wt.path, timeoutMs: 8000 });
