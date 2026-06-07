@@ -25,7 +25,7 @@ export interface GridDeps {
 	toast: (msg: string) => void;
 	promptForTopic: (title: string, placeholder: string, initial?: string, okLabel?: string) => Promise<string | null>;
 }
-interface SessionRecord { worktreePath: string; branch: string; repoName: string; repoPath: string; baseBranch: string; name?: string; }
+interface SessionRecord { worktreePath: string; branch: string; repoName: string; repoPath: string; baseBranch: string; name?: string; hidden?: boolean; }
 
 /** Controls bar + a bubbling stage of embedded claude terminals, scoped to one repo group. */
 export class TerminalsGrid {
