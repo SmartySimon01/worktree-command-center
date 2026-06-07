@@ -101,6 +101,8 @@ html, body {
 .cos-reg-badge.parked { background: rgba(91,115,255,0.22); color: var(--cos-accent-hover); }
 .cos-reg-detail { color: var(--text-faint); font-size: 11.5px; }
 .cos-reopen-btn { margin-left: auto; padding: 2px 9px !important; font-size: 11px !important; }
+.cos-coord-hidden { display: flex; flex-direction: column; gap: 3px; margin-bottom: 8px; }
+.cos-term-hide { font-size: 15px !important; line-height: 1; }
 
 .cos-coord-locks { display: flex; flex-wrap: wrap; gap: 6px; }
 .cos-coord-empty { color: var(--text-faint); font-style: italic; }
