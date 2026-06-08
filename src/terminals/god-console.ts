@@ -34,8 +34,8 @@ export class GodConsole {
 	render(parent: HTMLElement): void {
 		this.el = parent.createDiv({ cls: 'cos-god-panel' });
 		const head = this.el.createDiv({ cls: 'cos-god-head' });
-		head.createSpan({ text: '🜲 GOD' });
-		const hide = head.createEl('button', { text: '×', attr: { title: 'Hide GOD (session keeps running)' } });
+		head.createSpan({ text: '🜲 Kane' });
+		const hide = head.createEl('button', { text: '×', attr: { title: 'Hide Kane (session keeps running)' } });
 		hide.addEventListener('click', (e) => { e.stopPropagation(); this.onHide(); });
 
 		this.bodyEl = this.el.createDiv({ cls: 'cos-god-body' });
@@ -99,14 +99,14 @@ export class GodConsole {
 		const env: Record<string, string> = {
 			COS_COORD_DIR: this.opts.coordDir,
 			COS_TERMINAL_ID: '0',
-			COS_TERMINAL_NAME: 'GOD',
+			COS_TERMINAL_NAME: 'Kane',
 			COS_ROLE: 'god',
 			PATH: sidecarDir + path.delimiter + (process.env.PATH ?? ''),
 		};
 		fs.mkdirSync(this.opts.godHomeDir, { recursive: true });
 		this.bridge = new SessionBridge(this.opts.sidecarPath, this.opts.godHomeDir, 'claude', args, env);
 		this.bridge.onData((d) => this.term?.write(d));
-		this.bridge.onExit((code) => this.term?.write(`\r\n[GOD session ended (code ${code ?? '?'})]\r\n`));
+		this.bridge.onExit((code) => this.term?.write(`\r\n[Kane session ended (code ${code ?? '?'})]\r\n`));
 		this.term.onData((d) => this.bridge?.write(d));
 		this.bridge.start();
 

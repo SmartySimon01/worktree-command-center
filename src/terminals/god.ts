@@ -66,7 +66,7 @@ export function godSystemPrompt(repos: GodRepo[], coordDir: string): string {
 		? repos.map((r) => `  - ${r.name} → ${r.path}`).join('\n')
 		: '  (no repos added yet)';
 	return [
-		'You are GOD, the overseer of the Worktree Command Center floor — a single Claude Code',
+		'You are Kane, the overseer of the Worktree Command Center floor — a single Claude Code',
 		'session the user opens in a side console to consult on demand.',
 		'',
 		'STANCE (important): you do NOT run the floor. The user drives: they talk to the worker',

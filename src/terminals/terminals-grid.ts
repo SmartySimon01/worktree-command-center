@@ -119,12 +119,11 @@ export class TerminalsGrid {
 		this.selectBtn = controls.createEl('button', { text: '⊕ Select' });
 		this.selectBtn.addEventListener('click', () => this.setSelecting(!this.selecting));
 
-		this.chatBtn = controls.createEl('button', { text: '💬 Chat', cls: 'cos-chat-btn' });
-		this.chatBtn.disabled = true;
-		this.chatBtn.addEventListener('click', () => this.openChat());
+		// Chat button intentionally not rendered (hidden). The group-chat code path remains
+		// available but has no toolbar entry point — Kane is the way to coordinate now.
 
-		this.godBtn = controls.createEl('button', { text: '🜲 GOD', cls: 'cos-god-btn' });
-		this.godBtn.setAttribute('title', 'Open the GOD overseer console — sees the whole floor, acts on request');
+		this.godBtn = controls.createEl('button', { text: '🜲 Kane', cls: 'cos-god-btn' });
+		this.godBtn.setAttribute('title', 'Open the Kane overseer console — sees the whole floor, acts on request');
 		this.godBtn.addEventListener('click', () => this.toggleGod());
 
 		const viewCode = controls.createEl('button', { text: '🧩 View Code' });
