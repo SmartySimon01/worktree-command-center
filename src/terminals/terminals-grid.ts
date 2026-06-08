@@ -14,6 +14,7 @@ import { emptyState, applyKeystroke, onReady as rqReady, onSubmit as rqSubmit, o
 import { partitionByHidden } from './session-partition';
 import { GodConsole } from './god-console';
 import { slug as godSlug, formatFloorSnapshot, formatFloorIndex, parseTellRequest, resolveTellTarget } from './god';
+import { looksLikeMenu } from './prompt-detect';
 
 export interface RepoConfig { name: string; path: string; remote?: string; group?: string; }
 
@@ -538,16 +539,29 @@ export class TerminalsGrid {
 		if (this.stageEl) this.stageEl.style.top = this.maximized && this.controlsEl ? `${this.controlsEl.offsetHeight}px` : '';
 	}
 
+	/** The tile currently in the center (if any). */
+	private centeredTile(): TerminalTile | undefined {
+		return this.centeredId === null ? undefined : this.tiles.find((t) => t.tileId === this.centeredId);
+	}
+
 	private handleReady(t: TerminalTile): void {
 		if (this.hidden.includes(t)) return; // a hidden, background session never steals the center
 		if (this.chatRoom) { this.chatRoom.noteIdle(t.name); return; } // chat owns idle while open
 		const r = rqReady(this.q, t.tileId);
 		this.q = r.state;
+		// Auto-lock: don't let a sibling going idle steal focus while you're mid-way through a
+		// selection menu in the centered tile.
+		const cur = this.centeredTile();
+		if (cur && cur.tileId !== t.tileId && looksLikeMenu(cur.recentOutput())) return;
 		if (!this.locked && r.center !== null) this.doCenter(r.center);
 	}
 
 	private handleSubmit(t: TerminalTile): void {
 		if (this.hidden.includes(t)) return; // background sessions don't drive centering
+		// Auto-lock: an Enter inside an on-screen selection menu is toggling an option, NOT
+		// submitting a prompt — don't bubble focus away, so a multi-select can be finished in one
+		// go. (The Lock button does this globally; this does it automatically for menus.)
+		if (looksLikeMenu(t.recentOutput())) return;
 		const r = rqSubmit(this.q, t.tileId);
 		this.q = r.state;
 		// Locked: submitting doesn't pull the next terminal to center — centering stays manual.
