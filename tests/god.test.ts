@@ -87,4 +87,8 @@ describe('godSystemPrompt', () => {
     expect(p).toContain('cos-coord tell');
     expect(p).toContain('/repos/app');
   });
+  it('documents the watch and spawn commands', () => {
+    expect(p).toContain('cos-coord watch');
+    expect(p).toContain('cos-coord spawn');
+  });
 });
