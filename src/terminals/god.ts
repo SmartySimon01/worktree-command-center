@@ -6,16 +6,32 @@ export function slug(name: string): string {
 	return String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'unnamed';
 }
 
-export interface TellRequest { target: string; message: string; }
+export type OutboxMessage =
+	| { kind: 'tell'; target: string; message: string }
+	| { kind: 'watch'; target: string; note: string }
+	| { kind: 'spawn'; repo: string; base: string | null; task: string };
 
-/** Parse one god-outbox JSON message. Null on malformed / missing fields. */
-export function parseTellRequest(text: string): TellRequest | null {
-	try {
-		const o = JSON.parse(text) as { target?: unknown; message?: unknown };
+/** Parse one god-outbox JSON message into a typed command. An untagged {target,message} is
+ *  read as a tell (back-compat). Returns null on malformed / missing fields. */
+export function parseOutboxMessage(text: string): OutboxMessage | null {
+	let o: { kind?: unknown; target?: unknown; message?: unknown; note?: unknown; repo?: unknown; base?: unknown; task?: unknown };
+	try { o = JSON.parse(text); } catch { return null; }
+	if (!o || typeof o !== 'object') return null;
+	const kind = typeof o.kind === 'string' ? o.kind : 'tell';
+	if (kind === 'tell') {
 		if (typeof o.target === 'string' && typeof o.message === 'string' && o.target.trim() && o.message) {
-			return { target: o.target, message: o.message };
+			return { kind: 'tell', target: o.target, message: o.message };
 		}
-	} catch { /* not JSON */ }
+	} else if (kind === 'watch') {
+		if (typeof o.target === 'string' && typeof o.note === 'string' && o.target.trim() && o.note) {
+			return { kind: 'watch', target: o.target, note: o.note };
+		}
+	} else if (kind === 'spawn') {
+		if (typeof o.repo === 'string' && typeof o.task === 'string' && o.repo.trim() && o.task) {
+			const base = typeof o.base === 'string' && o.base.trim() ? o.base : null;
+			return { kind: 'spawn', repo: o.repo, base, task: o.task };
+		}
+	}
 	return null;
 }
 

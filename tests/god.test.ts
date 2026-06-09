@@ -1,18 +1,32 @@
 import { describe, it, expect } from 'vitest';
 import {
-  parseTellRequest, resolveTellTarget, slug,
+  parseOutboxMessage, resolveTellTarget, slug,
   formatFloorSnapshot, formatFloorIndex, godSystemPrompt,
 } from '../src/terminals/god';
 
-describe('parseTellRequest', () => {
-  it('parses a well-formed request', () => {
-    expect(parseTellRequest('{"ts":1,"target":"Improver 1","message":"rebase please"}'))
-      .toEqual({ target: 'Improver 1', message: 'rebase please' });
+describe('parseOutboxMessage', () => {
+  it('parses a tell (and treats an untagged target+message as tell)', () => {
+    expect(parseOutboxMessage('{"kind":"tell","target":"Improver 1","message":"rebase"}'))
+      .toEqual({ kind: 'tell', target: 'Improver 1', message: 'rebase' });
+    expect(parseOutboxMessage('{"ts":1,"target":"A","message":"hi"}'))
+      .toEqual({ kind: 'tell', target: 'A', message: 'hi' });
   });
-  it('rejects missing fields, blank target, and non-JSON', () => {
-    expect(parseTellRequest('{"target":"A"}')).toBeNull();
-    expect(parseTellRequest('{"target":"  ","message":"x"}')).toBeNull();
-    expect(parseTellRequest('not json')).toBeNull();
+  it('parses a watch', () => {
+    expect(parseOutboxMessage('{"kind":"watch","target":"A","note":"run tests"}'))
+      .toEqual({ kind: 'watch', target: 'A', note: 'run tests' });
+  });
+  it('parses a spawn with and without a base', () => {
+    expect(parseOutboxMessage('{"kind":"spawn","repo":"app","base":"main","task":"do X"}'))
+      .toEqual({ kind: 'spawn', repo: 'app', base: 'main', task: 'do X' });
+    expect(parseOutboxMessage('{"kind":"spawn","repo":"app","task":"do X"}'))
+      .toEqual({ kind: 'spawn', repo: 'app', base: null, task: 'do X' });
+  });
+  it('rejects malformed / missing fields', () => {
+    expect(parseOutboxMessage('not json')).toBeNull();
+    expect(parseOutboxMessage('{"kind":"tell","target":"A"}')).toBeNull();
+    expect(parseOutboxMessage('{"kind":"watch","target":"  ","note":"x"}')).toBeNull();
+    expect(parseOutboxMessage('{"kind":"spawn","repo":"app"}')).toBeNull();
+    expect(parseOutboxMessage('{"kind":"bogus"}')).toBeNull();
   });
 });
 
