@@ -5,8 +5,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { SessionBridge } from './session-bridge';
 import { removeWorktreeAndBranch, terminalSystemPrompt, type WorktreeInfo } from './worktree-manager';
-import { parseStatusPorcelain } from './worktree-registry';
-import { runCommand } from '../command-runner';
 import { scrollIntentForKey, type ScrollIntent } from './scroll-keys';
 import { FitThrottle } from './fit-throttle';
 import { ctrlClickActivator, openExternalUrl } from './links';
@@ -351,25 +349,10 @@ export class TerminalTile {
 		this.el?.remove();
 	}
 
-	/** Close from the × button: tear down AND delete the worktree + its branch (the branch dies). */
+	/** Close from the × button: tear down AND delete the worktree + its branch IMMEDIATELY —
+	 *  no confirmation, dirty or not. × means "throw this away"; use Minimize (hide) to keep a
+	 *  session you care about. The branch dies with it. */
 	async close(): Promise<void> {
-		// Compute dirty + unpushed counts, then ask the user to confirm before hard-deleting.
-		let dirty = 0;
-		let unpushed = 0;
-		try {
-			const statusResult = await runCommand('git', ['status', '--porcelain'], { cwd: this.opts.worktree.worktreePath, timeoutMs: 8000 });
-			if (statusResult.code === 0) dirty = parseStatusPorcelain(statusResult.stdout).length;
-		} catch { /* best effort — treat as 0 */ }
-		try {
-			const revResult = await runCommand('git', ['rev-list', '--count', `${this.opts.baseBranch}..HEAD`], { cwd: this.opts.worktree.worktreePath, timeoutMs: 8000 });
-			if (revResult.code === 0) unpushed = parseInt(revResult.stdout.trim(), 10) || 0;
-		} catch { /* best effort — treat as 0 */ }
-
-		const message = (dirty || unpushed)
-			? `${this.opts.worktree.branch} has ${dirty} uncommitted file(s) and ${unpushed} unpushed commit(s). Delete worktree AND branch anyway?`
-			: `Close ${this.opts.worktree.branch}? (worktree is clean)`;
-		if (!window.confirm(message)) return;
-
 		this.kill();
 		try {
 			await removeWorktreeAndBranch(this.opts.repoPath, this.opts.worktree.worktreePath, this.opts.worktree.branch);
