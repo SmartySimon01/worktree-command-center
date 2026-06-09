@@ -63,4 +63,19 @@ describe('cos-coord CLI', () => {
     const msg = JSON.parse(fs.readFileSync(path.join(dir, 'god-outbox', files[0]), 'utf8'));
     expect(msg).toMatchObject({ target: 'A', message: 'hello' });
   });
+  it('watch/spawn are god-only and drop tagged files', () => {
+    // No role → no-op
+    execFileSync('node', [CLI, 'watch', 'A', '--note', 'x'], {
+      env: { ...process.env, COS_COORD_DIR: dir, COS_TERMINAL_ID: '1', COS_TERMINAL_NAME: 'x' }, encoding: 'utf8',
+    });
+    expect(fs.existsSync(path.join(dir, 'god-outbox'))).toBe(false);
+    // As god → files appear
+    const god = { ...process.env, COS_COORD_DIR: dir, COS_TERMINAL_ID: '0', COS_TERMINAL_NAME: 'Kane', COS_ROLE: 'god' };
+    execFileSync('node', [CLI, 'watch', 'A', '--note', 'run tests'], { env: god, encoding: 'utf8' });
+    execFileSync('node', [CLI, 'spawn', 'app', '--base', 'main', '--task', 'do X'], { env: god, encoding: 'utf8' });
+    const msgs = fs.readdirSync(path.join(dir, 'god-outbox')).filter((f) => f.endsWith('.json'))
+      .map((f) => JSON.parse(fs.readFileSync(path.join(dir, 'god-outbox', f), 'utf8')));
+    expect(msgs.find((m) => m.kind === 'watch')).toMatchObject({ target: 'A', note: 'run tests' });
+    expect(msgs.find((m) => m.kind === 'spawn')).toMatchObject({ repo: 'app', base: 'main', task: 'do X' });
+  });
 });

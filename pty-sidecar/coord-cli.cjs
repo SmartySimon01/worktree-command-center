@@ -46,6 +46,23 @@ function main() {
     process.exit(0);
   }
 
+  if (cmd === 'watch') {
+    if (env('COS_ROLE') !== 'god') process.exit(0);
+    const target = resource;
+    const note = flag(rest, '--note') || '';
+    if (target && note) store.watch(dir, target, note);
+    process.exit(0);
+  }
+
+  if (cmd === 'spawn') {
+    if (env('COS_ROLE') !== 'god') process.exit(0);
+    const repo = resource;
+    const base = flag(rest, '--base') || '';
+    const task = flag(rest, '--task') || '';
+    if (repo && task) store.spawn(dir, repo, base, task);
+    process.exit(0);
+  }
+
   if (cmd === 'acquire') {
     const waitMs = Number(env('COS_COORD_WAIT_MS', String(core.WAIT_MS)));
     const ttlMs = flag(rest, '--ttl') ? Number(flag(rest, '--ttl')) * 1000 : core.CLI_TTL_MS;
@@ -61,7 +78,7 @@ function main() {
     process.exit(0);
   }
 
-  console.error('usage: cos-coord <status|acquire|release|note|chat|tell> [resource] [--reason "…"] [--ttl <sec>]');
+  console.error('usage: cos-coord <status|acquire|release|note|chat|tell|watch|spawn> [resource] [--reason "…"] [--ttl <sec>] [--note "…"] [--base <branch>] [--task "…"]');
   process.exit(0);
 }
 

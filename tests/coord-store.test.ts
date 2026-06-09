@@ -60,4 +60,14 @@ describe('coord-store', () => {
     const files = fs.readdirSync(path.join(dir, 'god-outbox')).filter((f) => f.endsWith('.json'));
     expect(files).toHaveLength(1); // no leftover .tmp
   });
+
+  it('watch + spawn drop tagged outbox files', () => {
+    store.watch(dir, 'Improver 1', 'run tests after');
+    store.spawn(dir, 'app', 'main', 'do X');
+    const files = fs.readdirSync(path.join(dir, 'god-outbox')).filter((f) => f.endsWith('.json'));
+    expect(files).toHaveLength(2);
+    const msgs = files.map((f) => JSON.parse(fs.readFileSync(path.join(dir, 'god-outbox', f), 'utf8')));
+    expect(msgs.find((m) => m.kind === 'watch')).toMatchObject({ target: 'Improver 1', note: 'run tests after' });
+    expect(msgs.find((m) => m.kind === 'spawn')).toMatchObject({ repo: 'app', base: 'main', task: 'do X' });
+  });
 });
