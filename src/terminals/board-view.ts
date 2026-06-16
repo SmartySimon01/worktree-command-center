@@ -14,7 +14,7 @@ export class BoardView {
 	constructor(
 		private coordDir: string,
 		private onReopen: (branch: string) => void = () => {},
-		private hiddenProvider: () => Array<{ tileId: number; name: string; branch: string }> = () => [],
+		private hiddenProvider: () => Array<{ tileId: number; name: string; branch: string; repo: string }> = () => [],
 		private onShow: (tileId: number) => void = () => {},
 	) {}
 
@@ -76,6 +76,7 @@ export class BoardView {
 			for (const h of hiddenList) {
 				const row = this.hiddenEl.createDiv({ cls: 'cos-reg-row' });
 				row.createSpan({ cls: 'cos-reg-branch', text: h.name });
+				if (h.repo) row.createSpan({ cls: 'cos-reg-repo-tag', text: h.repo });
 				if (h.branch && h.branch !== h.name) row.createSpan({ cls: 'cos-reg-detail', text: h.branch });
 				const btn = row.createEl('button', { text: 'Show', cls: 'cos-reopen-btn' });
 				btn.addEventListener('click', (e) => { e.stopPropagation(); this.onShow(h.tileId); });

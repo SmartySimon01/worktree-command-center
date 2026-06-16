@@ -100,6 +100,7 @@ html, body {
 .cos-reg-badge.ahead  { background: rgba(57,197,207,0.18); color: var(--color-cyan); }
 .cos-reg-badge.parked { background: rgba(91,115,255,0.22); color: var(--cos-accent-hover); }
 .cos-reg-detail { color: var(--text-faint); font-size: 11.5px; }
+.cos-reg-repo-tag { font-size: 11px; color: var(--text-muted); background: rgba(154,160,180,0.14); padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
 .cos-reopen-btn { margin-left: auto; padding: 2px 9px !important; font-size: 11px !important; }
 .cos-coord-hidden { display: flex; flex-direction: column; gap: 3px; margin-bottom: 8px; }
 .cos-term-hide { font-size: 15px !important; line-height: 1; }

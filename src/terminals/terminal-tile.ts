@@ -239,6 +239,7 @@ export class TerminalTile {
 	get worktreePath(): string { return this.opts.worktree.worktreePath; }
 	get branch(): string { return this.opts.worktree.branch; }
 	get baseBranch(): string { return this.opts.baseBranch; }
+	get repoName(): string { return this.opts.repoName; }
 
 	/** Toggle the room-selection highlight. */
 	setSelected(on: boolean): void {

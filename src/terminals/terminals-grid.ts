@@ -139,7 +139,7 @@ export class TerminalsGrid {
 		if (!this.board) this.board = new BoardView(
 			this.coordDir,
 			(branch) => void this.reopenAndOpen(branch),
-			() => this.hidden.map((t) => ({ tileId: t.tileId, name: t.name, branch: t.branch })),
+			() => this.hidden.map((t) => ({ tileId: t.tileId, name: t.name, branch: t.branch, repo: t.repoName })),
 			(tileId) => this.showTile(tileId),
 		);
 		this.board.mount(parent);
