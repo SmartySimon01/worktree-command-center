@@ -104,6 +104,11 @@ html, body {
 .cos-reopen-btn { margin-left: auto; padding: 2px 9px !important; font-size: 11px !important; }
 .cos-coord-hidden { display: flex; flex-direction: column; gap: 3px; margin-bottom: 8px; }
 .cos-term-hide { font-size: 15px !important; line-height: 1; }
+/* Right-clustered tile controls: lock · minimize · close. */
+.cos-term-head-btns { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.cos-term-lock { font-size: 11px !important; line-height: 1; opacity: 0.55; filter: grayscale(1); }
+.cos-term-lock:hover { opacity: 0.9; filter: none; }
+.cos-term-lock.on { opacity: 1; filter: none; }
 
 .cos-coord-locks { display: flex; flex-wrap: wrap; gap: 6px; }
 .cos-coord-empty { color: var(--text-faint); font-style: italic; }

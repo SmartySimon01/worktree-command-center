@@ -19,6 +19,7 @@ export interface TerminalTileOpts {
 	coordDir: string;
 	onClosed: (tile: TerminalTile) => void;
 	onHide?: (tile: TerminalTile) => void;
+	onLock?: (tile: TerminalTile) => void;
 	onCenter?: (tile: TerminalTile) => void;
 	onInput?: (tile: TerminalTile, data: string) => void;
 	onEnter?: (tile: TerminalTile) => void;
@@ -40,6 +41,7 @@ export class TerminalTile {
 	private resizeObs: ResizeObserver | null = null;
 	private fitThrottle: FitThrottle | null = null;
 	private badgeEl: HTMLElement | null = null;
+	private lockBtnEl: HTMLButtonElement | null = null;
 	private readyWatcher: fs.FSWatcher | null = null;
 	private nameEl: HTMLElement | null = null;
 	private displayName: string;
@@ -58,9 +60,13 @@ export class TerminalTile {
 		this.badgeEl = head.createSpan({ cls: 'cos-term-badge' });
 		this.nameEl = head.createSpan({ cls: 'cos-term-name', text: this.displayName, attr: { title: 'Double-click to rename' } });
 		this.nameEl.addEventListener('dblclick', (e) => { e.stopPropagation(); this.opts.onRequestRename?.(this, this.displayName); });
-		const hide = head.createEl('button', { text: '–', cls: 'cos-term-hide', attr: { title: 'Hide — keeps the session running; resurface from Coordination' } });
+		// Right-clustered controls: lock, minimize (hide), close.
+		const btns = head.createDiv({ cls: 'cos-term-head-btns' });
+		this.lockBtnEl = btns.createEl('button', { text: '🔒', cls: 'cos-term-lock', attr: { title: 'Lock to center (Alt+L) — stays centered until you switch to another terminal' } });
+		this.lockBtnEl.addEventListener('click', (e) => { e.stopPropagation(); this.opts.onLock?.(this); });
+		const hide = btns.createEl('button', { text: '–', cls: 'cos-term-hide', attr: { title: 'Hide — keeps the session running; resurface from Coordination' } });
 		hide.addEventListener('click', (e) => { e.stopPropagation(); this.opts.onHide?.(this); });
-		const close = head.createEl('button', { text: '×', attr: { title: 'Close — deletes this worktree + its branch' } });
+		const close = btns.createEl('button', { text: '×', attr: { title: 'Close — deletes this worktree + its branch' } });
 		close.addEventListener('click', (e) => { e.stopPropagation(); void this.close(); });
 		// Click anywhere in the tile (header or terminal body, except the × button) centers it.
 		this.el.addEventListener('click', () => this.opts.onCenter?.(this));
@@ -182,6 +188,12 @@ export class TerminalTile {
 
 	setCentered(on: boolean): void {
 		this.el?.toggleClass('centered', on);
+	}
+
+	/** Reflect this tile's individual-lock state (gold ring + lit lock button). */
+	setLocked(on: boolean): void {
+		this.el?.toggleClass('cos-term-lockon', on);
+		this.lockBtnEl?.toggleClass('on', on);
 	}
 
 	/** Detach/re-attach the tile from the visible stage WITHOUT touching the session.

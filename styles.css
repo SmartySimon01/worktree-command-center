@@ -858,6 +858,8 @@
 .cos-terminals-stage.cos-terminals-max { position:fixed; inset:0; height:auto; z-index:1000; border-radius:0; }
 .cos-terminals-stage .cos-term-tile { position:absolute; transition:left .5s cubic-bezier(.22,.61,.36,1), top .5s cubic-bezier(.22,.61,.36,1), width .5s cubic-bezier(.22,.61,.36,1), height .5s cubic-bezier(.22,.61,.36,1), box-shadow .35s; }
 .cos-terminals-stage .cos-term-tile.centered { z-index:50; box-shadow:0 0 0 2px #2fae6e, 0 16px 50px rgba(0,0,0,.7); }
+/* Individually-locked (pinned to center): gold ring instead of the green centered ring. */
+.cos-terminals-stage .cos-term-tile.cos-term-lockon.centered { box-shadow:0 0 0 2px #e0a92e, 0 16px 50px rgba(0,0,0,.7); }
 .cos-term-badge { display:none; background:#4a3f73; color:#fff; font-weight:700; font-size:11px; padding:1px 7px; border-radius:5px; margin-right:6px; }
 .cos-maximize-btn { background:var(--background-modifier-border); border:none; border-radius:6px; padding:6px 12px; cursor:pointer; color:var(--text-normal); }
 .cos-lock-btn { background:var(--background-modifier-border); border:none; border-radius:6px; padding:6px 12px; cursor:pointer; color:var(--text-normal); }

@@ -51,6 +51,7 @@ export class TerminalsGrid {
 	private centeredId: number | null = null;
 	private maximized = false;
 	private locked = false;
+	private lockedTileId: number | null = null; // individual lock: this tile is pinned to center until you navigate away
 	private selecting = false;
 	private selectBtn: HTMLButtonElement | null = null;
 	private chatBtn: HTMLButtonElement | null = null;
@@ -212,6 +213,7 @@ export class TerminalsGrid {
 			if (!e.altKey) return;
 			if (e.key === 'ArrowRight') { e.preventDefault(); const r = rqCycleNext(this.q); this.q = r.state; if (r.center !== null) this.doCenter(r.center); return; }
 			if (e.key === 'ArrowLeft') { e.preventDefault(); const r = rqCyclePrev(this.q); this.q = r.state; if (r.center !== null) this.doCenter(r.center); return; }
+			if (e.key === 'l' || e.key === 'L') { e.preventDefault(); if (this.centeredId !== null) this.toggleLockById(this.centeredId); return; }
 			const norm = e.key.length === 1 ? e.key.toUpperCase() : e.key;
 			const idx = keyToIndex(norm);
 			if (idx !== null && this.tiles[idx]) { e.preventDefault(); this.handleClick(this.tiles[idx]!.tileId); }
@@ -531,9 +533,24 @@ export class TerminalsGrid {
 
 	/** Center a tile AND give its terminal keyboard focus (so typing goes there). */
 	private doCenter(id: number): void {
+		// Navigating to a DIFFERENT tile breaks an individual lock (the only way out of it).
+		if (this.lockedTileId !== null && this.lockedTileId !== id) { this.lockedTileId = null; this.refreshLockVisuals(); }
 		this.centeredId = id;
 		this.applyLayout();
 		this.focusCentered();
+	}
+
+	/** Toggle the individual lock for a tile: pin it to center until you switch terminals. */
+	private toggleLockById(id: number): void {
+		if (!this.tiles.some((t) => t.tileId === id)) return; // only real terminal tiles
+		if (this.lockedTileId === id) { this.lockedTileId = null; this.refreshLockVisuals(); return; }
+		this.lockedTileId = id;
+		this.refreshLockVisuals();
+		this.doCenter(id); // lockedTileId === id, so doCenter won't break it
+	}
+
+	private refreshLockVisuals(): void {
+		this.tiles.forEach((t) => t.setLocked(t.tileId === this.lockedTileId));
 	}
 
 	/** Focus the centered tile and blur every other one, so a stray keystroke can never
@@ -616,7 +633,7 @@ export class TerminalsGrid {
 		// selection menu in the centered tile.
 		const cur = this.centeredTile();
 		if (cur && cur.tileId !== t.tileId && looksLikeMenu(cur.recentOutput())) return;
-		if (!this.locked && r.center !== null) this.doCenter(r.center);
+		if (!this.locked && this.lockedTileId === null && r.center !== null) this.doCenter(r.center);
 	}
 
 	private handleSubmit(t: TerminalTile): void {
@@ -628,14 +645,15 @@ export class TerminalsGrid {
 		if (looksLikeMenu(t.recentOutput())) return;
 		const r = rqSubmit(this.q, t.tileId);
 		this.q = r.state;
-		// Locked: submitting doesn't pull the next terminal to center — centering stays manual.
-		if (!this.locked && r.center !== null) this.doCenter(r.center);
+		// Locked (global or individual): submitting doesn't pull the next terminal to center.
+		if (!this.locked && this.lockedTileId === null && r.center !== null) this.doCenter(r.center);
 	}
 
 	/** Hide a tile: pull it off the stage but keep its session + worktree alive.
 	 *  Resurface later with showTile() from the Coordination panel. */
 	private hideTile(tile: TerminalTile): void {
 		if (!this.tiles.includes(tile)) return;
+		if (this.lockedTileId === tile.tileId) { this.lockedTileId = null; tile.setLocked(false); }
 		const wasCentered = this.centeredId === tile.tileId;
 		this.tiles = this.tiles.filter((x) => x !== tile);
 		this.hidden.push(tile);
@@ -679,8 +697,9 @@ export class TerminalsGrid {
 			onRequestRename: (t, cur) => {
 				void this.deps.promptForTopic('Rename terminal', 'New name', cur, 'Rename').then((name) => { if (name && name.trim()) t.setName(name.trim()); });
 			},
-			onClosed: (t) => { this.idleTiles.delete(t.tileId); const wasCentered = this.centeredId === t.tileId; const r = rqClose(this.q, t.tileId, wasCentered); this.q = r.state; this.tiles = this.tiles.filter((x) => x !== t); void this.persist(); if (r.center !== null) this.doCenter(r.center); else { if (wasCentered) this.centeredId = null; this.applyLayout(); } },
+			onClosed: (t) => { this.idleTiles.delete(t.tileId); if (this.lockedTileId === t.tileId) this.lockedTileId = null; const wasCentered = this.centeredId === t.tileId; const r = rqClose(this.q, t.tileId, wasCentered); this.q = r.state; this.tiles = this.tiles.filter((x) => x !== t); void this.persist(); if (r.center !== null) this.doCenter(r.center); else { if (wasCentered) this.centeredId = null; this.applyLayout(); } },
 			onHide: (t) => this.hideTile(t),
+			onLock: (t) => this.toggleLockById(t.tileId),
 			onCenter: (t) => this.handleClick(t.tileId),
 			onReady: (t) => this.handleReady(t),
 			onInput: (t, data) => { this.idleTiles.delete(t.tileId); this.q.composingLen = applyKeystroke(this.q.composingLen, data); },
