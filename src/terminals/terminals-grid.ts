@@ -16,6 +16,7 @@ import { GodConsole } from './god-console';
 import { slug as godSlug, formatFloorSnapshot, formatFloorIndex, parseOutboxMessage, resolveTellTarget, type OutboxMessage } from './god';
 import { looksLikeMenu } from './prompt-detect';
 import { looksLikePrompt } from './chat-room';
+import { classifyAttention, type AttentionItem } from './attention';
 
 export interface RepoConfig { name: string; path: string; remote?: string; group?: string; }
 
@@ -60,6 +61,7 @@ export class TerminalsGrid {
 	private godVisible = false;
 	private watchers: Array<{ target: string; note: string }> = [];
 	private pendingTask = new Map<number, string>();
+	private idleTiles = new Set<number>();
 	private stageWrapEl: HTMLElement | null = null;
 	private floorTimer: number | null = null;
 	private godOutboxWatcher: import('fs').FSWatcher | null = null;
@@ -382,6 +384,20 @@ export class TerminalsGrid {
 	/** Every live session GOD should see / be able to message (foreground + hidden background). */
 	private allSessions(): TerminalTile[] { return [...this.tiles, ...this.hidden]; }
 
+	/** Snapshot of which terminals need attention, for the topbar queue. */
+	attentionItems(): AttentionItem[] {
+		return classifyAttention(this.allSessions().map((t) => ({
+			id: t.tileId, name: t.name, repo: this.repoNameFor(t),
+			output: t.recentOutput(), idle: this.idleTiles.has(t.tileId),
+		})));
+	}
+
+	/** Jump to a terminal by id: un-hide it if hidden, else center + focus it. */
+	revealTile(id: number): void {
+		if (this.hidden.some((t) => t.tileId === id)) { this.showTile(id); return; }
+		if (this.tiles.some((t) => t.tileId === id)) { this.doCenter(id); this.focusCentered(); }
+	}
+
 	/** Toggle the GOD console: spawn on first open, then just show/hide (session persists). */
 	private toggleGod(): void {
 		if (!this.godConsole) {
@@ -590,6 +606,8 @@ export class TerminalsGrid {
 		const task = this.pendingTask.get(t.tileId);
 		if (task !== undefined) { this.pendingTask.delete(t.tileId); t.sendLine(task); }
 
+		this.idleTiles.add(t.tileId); // finished a turn → idle/done (also covers hidden background tiles)
+
 		if (this.hidden.includes(t)) return; // a hidden, background session never steals the center
 		if (this.chatRoom) { this.chatRoom.noteIdle(t.name); return; } // chat owns idle while open
 		const r = rqReady(this.q, t.tileId);
@@ -602,6 +620,7 @@ export class TerminalsGrid {
 	}
 
 	private handleSubmit(t: TerminalTile): void {
+		this.idleTiles.delete(t.tileId); // submitting → busy again
 		if (this.hidden.includes(t)) return; // background sessions don't drive centering
 		// Auto-lock: an Enter inside an on-screen selection menu is toggling an option, NOT
 		// submitting a prompt — don't bubble focus away, so a multi-select can be finished in one
@@ -638,6 +657,7 @@ export class TerminalsGrid {
 		this.hidden = this.hidden.filter((t) => t !== tile);
 		this.tiles.push(tile);
 		tile.setHidden(false);
+		this.idleTiles.delete(tile.tileId); // resurfaced → you're acting on it, not "done waiting"
 		this.centeredId = tile.tileId;
 		this.applyLayout();
 		this.focusCentered();
@@ -659,11 +679,11 @@ export class TerminalsGrid {
 			onRequestRename: (t, cur) => {
 				void this.deps.promptForTopic('Rename terminal', 'New name', cur, 'Rename').then((name) => { if (name && name.trim()) t.setName(name.trim()); });
 			},
-			onClosed: (t) => { const wasCentered = this.centeredId === t.tileId; const r = rqClose(this.q, t.tileId, wasCentered); this.q = r.state; this.tiles = this.tiles.filter((x) => x !== t); void this.persist(); if (r.center !== null) this.doCenter(r.center); else { if (wasCentered) this.centeredId = null; this.applyLayout(); } },
+			onClosed: (t) => { this.idleTiles.delete(t.tileId); const wasCentered = this.centeredId === t.tileId; const r = rqClose(this.q, t.tileId, wasCentered); this.q = r.state; this.tiles = this.tiles.filter((x) => x !== t); void this.persist(); if (r.center !== null) this.doCenter(r.center); else { if (wasCentered) this.centeredId = null; this.applyLayout(); } },
 			onHide: (t) => this.hideTile(t),
 			onCenter: (t) => this.handleClick(t.tileId),
 			onReady: (t) => this.handleReady(t),
-			onInput: (t, data) => { this.q.composingLen = applyKeystroke(this.q.composingLen, data); },
+			onInput: (t, data) => { this.idleTiles.delete(t.tileId); this.q.composingLen = applyKeystroke(this.q.composingLen, data); },
 			onEnter: (t) => this.handleSubmit(t),
 			// Reset the typing-hold on ANY focus change: gaining focus starts a fresh box,
 			// and leaving a terminal means you're no longer typing — so finished terminals
