@@ -90,9 +90,10 @@ export class GodConsole {
 			}
 		});
 		this.fitThrottle = new FitThrottle({
-			fit: () => this.fit?.fit(),
-			dims: () => ({ cols: this.term?.cols ?? 0, rows: this.term?.rows ?? 0 }),
-			resize: (cols, rows) => this.bridge?.resize(cols, rows),
+			// Kane lives in a fixed-width dock (never bubbles), so fit it to its actual size —
+			// no minimum clamp (clamping would clip his own readable content).
+			propose: () => this.fit?.proposeDimensions() ?? null,
+			apply: (cols, rows) => { this.term?.resize(cols, rows); this.bridge?.resize(cols, rows); },
 		});
 		this.fitSoon();
 

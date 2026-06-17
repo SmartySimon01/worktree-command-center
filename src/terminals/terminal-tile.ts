@@ -112,9 +112,14 @@ export class TerminalTile {
 			}
 		});
 		this.fitThrottle = new FitThrottle({
-			fit: () => this.fit?.fit(),
-			dims: () => ({ cols: this.term?.cols ?? 0, rows: this.term?.rows ?? 0 }),
-			resize: (cols, rows) => this.bridge?.resize(cols, rows),
+			// Propose without mutating (so the dedupe holds), then size BOTH xterm + PTY together.
+			// Clamp to a readable minimum: a tiny satellite tile must NOT make claude wrap output
+			// to ~30 cols — keep it ≥80 so a later centered view reads correctly (small tiles just
+			// show a clipped preview).
+			propose: () => this.fit?.proposeDimensions() ?? null,
+			apply: (cols, rows) => { this.term?.resize(cols, rows); this.bridge?.resize(cols, rows); },
+			minCols: 80,
+			minRows: 20,
 		});
 		this.fitSoon();
 

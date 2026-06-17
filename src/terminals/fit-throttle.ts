@@ -1,17 +1,24 @@
-/** Debounce + dedupe the xterm fit→pty-resize cycle.
+/** Debounce + dedupe + clamp the xterm→pty resize cycle.
  *
- *  Why this exists: tiles animate their size over ~0.5s (CSS transition), so a single
- *  click-to-center fires ResizeObserver dozens of times. Resizing the PTY on every tick
- *  makes ConPTY repaint the whole viewport each time, and those repaints pile up in the
- *  xterm scrollback as duplicated, multi-width garble. We instead coalesce a burst into a
- *  SINGLE fit after the size settles, and skip the pty resize entirely when the computed
- *  cols/rows haven't actually changed (e.g. a position-only move). */
+ *  Two problems this solves:
+ *  1) Tiles animate their size over ~0.5s, so a single click-to-center fires ResizeObserver
+ *     dozens of times; resizing the PTY each tick makes ConPTY repaint the whole viewport and
+ *     those repaints pile up as duplicated garble. → debounce a burst into one resize.
+ *  2) Uncentered/satellite tiles are tiny (~30 cols), so fitting the PTY to them makes `claude`
+ *     wrap its output super-narrow; that historical output can't re-wrap when the tile is later
+ *     centered, leaving a wide tile showing half-empty narrow text. → clamp to a readable
+ *     minimum so the PTY is never tiny, and dedupe on the clamped value so bubbling between
+ *     small tiles doesn't resize the PTY at all.
+ *
+ *  Uses `propose()` (compute the target dims WITHOUT mutating the terminal — e.g. FitAddon's
+ *  proposeDimensions) so the dedupe holds; `apply()` then sets BOTH the xterm and the PTY. */
 export interface FitThrottleDeps {
-	fit: () => void;                                    // run the xterm FitAddon (sync)
-	dims: () => { cols: number; rows: number };         // terminal dims to read AFTER fit
-	resize: (cols: number, rows: number) => void;       // push the new size to the PTY
-	delayMs?: number;                                   // quiet period before committing (default 120)
-	setTimer?: (cb: () => void, ms: number) => number;  // injectable for tests
+	propose: () => { cols: number; rows: number } | null | undefined; // target dims, no mutation
+	apply: (cols: number, rows: number) => void;                      // set xterm + PTY to this size
+	minCols?: number;                                                 // never go narrower (default 0)
+	minRows?: number;                                                 // never go shorter (default 0)
+	delayMs?: number;                                                 // quiet period before committing (default 120)
+	setTimer?: (cb: () => void, ms: number) => number;               // injectable for tests
 	clearTimer?: (id: number) => void;
 }
 
@@ -20,16 +27,20 @@ export class FitThrottle {
 	private lastCols = -1;
 	private lastRows = -1;
 	private readonly delay: number;
+	private readonly minCols: number;
+	private readonly minRows: number;
 	private readonly setTimer: (cb: () => void, ms: number) => number;
 	private readonly clearTimer: (id: number) => void;
 
 	constructor(private deps: FitThrottleDeps) {
 		this.delay = deps.delayMs ?? 120;
+		this.minCols = deps.minCols ?? 0;
+		this.minRows = deps.minRows ?? 0;
 		this.setTimer = deps.setTimer ?? ((cb, ms) => globalThis.setTimeout(cb, ms) as unknown as number);
 		this.clearTimer = deps.clearTimer ?? ((id) => globalThis.clearTimeout(id));
 	}
 
-	/** Request a fit. A burst of these collapses into one fit `delayMs` after the last call. */
+	/** Request a fit. A burst of these collapses into one apply `delayMs` after the last call. */
 	schedule(): void {
 		if (this.timer !== null) this.clearTimer(this.timer);
 		this.timer = this.setTimer(() => { this.timer = null; this.run(); }, this.delay);
@@ -37,14 +48,16 @@ export class FitThrottle {
 
 	private run(): void {
 		try {
-			this.deps.fit();
-			const { cols, rows } = this.deps.dims();
+			const p = this.deps.propose();
+			if (!p) return; // terminal not laid out yet — a later resize retries
+			const cols = Math.max(this.minCols, p.cols);
+			const rows = Math.max(this.minRows, p.rows);
 			if (cols > 0 && rows > 0 && (cols !== this.lastCols || rows !== this.lastRows)) {
 				this.lastCols = cols;
 				this.lastRows = rows;
-				this.deps.resize(cols, rows);
+				this.deps.apply(cols, rows);
 			}
-		} catch { /* terminal not visible yet — a later resize will retry */ }
+		} catch { /* not visible yet — a later resize will retry */ }
 	}
 
 	dispose(): void {
