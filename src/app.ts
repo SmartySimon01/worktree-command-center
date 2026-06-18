@@ -125,6 +125,17 @@ async function main(): Promise<void> {
 
 		await activeGrid.mount(gridContainer);
 
+		// Alt+↑ / Alt+↓ cycle WORKSPACES (Alt+←/→ cycle terminals within the active workspace).
+		// Capture-phase so it beats the terminal; only acts when there's more than one workspace.
+		document.addEventListener('keydown', (e) => {
+			if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+			if (workspaces.length < 2) return;
+			e.preventDefault();
+			const i = Math.max(0, workspaces.findIndex((w) => w.id === activeId));
+			const dir = e.key === 'ArrowDown' ? 1 : -1;
+			void switchTo(workspaces[(i + dir + workspaces.length) % workspaces.length]!.id);
+		}, true);
+
 		addFolderBtn.addEventListener('click', () => {
 			void (async () => {
 				const folder = await window.wcc.addFolder();
