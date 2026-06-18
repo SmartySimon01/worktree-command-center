@@ -42,6 +42,8 @@ export class TerminalTile {
 	private fitThrottle: FitThrottle | null = null;
 	private badgeEl: HTMLElement | null = null;
 	private lockBtnEl: HTMLButtonElement | null = null;
+	private remoteBtnEl: HTMLButtonElement | null = null;
+	private remoteOn = false;
 	private readyWatcher: fs.FSWatcher | null = null;
 	private nameEl: HTMLElement | null = null;
 	private displayName: string;
@@ -60,8 +62,10 @@ export class TerminalTile {
 		this.badgeEl = head.createSpan({ cls: 'cos-term-badge' });
 		this.nameEl = head.createSpan({ cls: 'cos-term-name', text: this.displayName, attr: { title: 'Double-click to rename' } });
 		this.nameEl.addEventListener('dblclick', (e) => { e.stopPropagation(); this.opts.onRequestRename?.(this, this.displayName); });
-		// Right-clustered controls: lock, minimize (hide), close.
+		// Right-clustered controls: remote, lock, minimize (hide), close.
 		const btns = head.createDiv({ cls: 'cos-term-head-btns' });
+		this.remoteBtnEl = btns.createEl('button', { text: '📱', cls: 'cos-term-remote', attr: { title: 'Remote control via the Claude phone app — view + approve this session from your phone. (While on, this terminal asks permission instead of auto-running.)' } });
+		this.remoteBtnEl.addEventListener('click', (e) => { e.stopPropagation(); this.toggleRemoteControl(); });
 		this.lockBtnEl = btns.createEl('button', { text: '🔒', cls: 'cos-term-lock', attr: { title: 'Lock to center (Alt+L) — stays centered until you switch to another terminal' } });
 		this.lockBtnEl.addEventListener('click', (e) => { e.stopPropagation(); this.opts.onLock?.(this); });
 		const hide = btns.createEl('button', { text: '–', cls: 'cos-term-hide', attr: { title: 'Hide — keeps the session running; resurface from Coordination' } });
@@ -199,6 +203,18 @@ export class TerminalTile {
 	/** Dim this tile when it doesn't match the search filter. */
 	setDimmed(on: boolean): void {
 		this.el?.toggleClass('cos-term-dim', on);
+	}
+
+	get isRemoteOn(): boolean { return this.remoteOn; }
+
+	/** Toggle Claude Code remote-control for this session by sending `/remote-control` to it —
+	 *  links it to the Claude phone app (view + approve there). It's a toggle command, so we
+	 *  flip our own indicator to match. */
+	toggleRemoteControl(): void {
+		this.sendLine('/remote-control');
+		this.remoteOn = !this.remoteOn;
+		this.remoteBtnEl?.toggleClass('on', this.remoteOn);
+		this.el?.toggleClass('cos-term-remoteon', this.remoteOn);
 	}
 
 	/** Detach/re-attach the tile from the visible stage WITHOUT touching the session.

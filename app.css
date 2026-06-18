@@ -112,6 +112,10 @@ html, body {
 .cos-term-lock { font-size: 11px !important; line-height: 1; opacity: 0.55; filter: grayscale(1); }
 .cos-term-lock:hover { opacity: 0.9; filter: none; }
 .cos-term-lock.on { opacity: 1; filter: none; }
+.cos-term-remote { font-size: 11px !important; line-height: 1; opacity: 0.55; filter: grayscale(1); }
+.cos-term-remote:hover { opacity: 0.9; filter: none; }
+.cos-term-remote.on { opacity: 1; filter: none; }
+.cos-terminals-stage .cos-term-tile.cos-term-remoteon .cos-term-head { box-shadow: inset 0 0 0 1px var(--color-cyan); }
 
 .cos-coord-locks { display: flex; flex-wrap: wrap; gap: 6px; }
 .cos-coord-empty { color: var(--text-faint); font-style: italic; }
