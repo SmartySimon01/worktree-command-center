@@ -79,6 +79,8 @@ async function main(): Promise<void> {
 		attention.render(topBar);
 		window.addEventListener('beforeunload', () => attention.dispose());
 
+		const phoneBtn = topBar.createEl('button', { cls: 'wcc-phone', text: '📱 Phone' });
+
 		// --- workspace tab bar ---
 		const bar = new WorkspaceBar({
 			list: () => workspaces,
@@ -138,6 +140,28 @@ async function main(): Promise<void> {
 			const dir = e.key === 'ArrowDown' ? 1 : -1;
 			void switchTo(workspaces[(i + dir + workspaces.length) % workspaces.length]!.id);
 		}, true);
+
+		// Phone floor view: push the active workspace's floor to the main-process server every 2s,
+		// and run actions the phone sends back (toggle remote-control / spawn).
+		window.setInterval(() => window.wcc.pushFloorState({ terminals: activeGrid.floorState(), repos: activeGrid.repoNames() }), 2000);
+		window.wcc.onRemoteAction((a) => {
+			if (a.type === 'remote' && typeof a.id === 'number') activeGrid.toggleRemoteById(a.id);
+			else if (a.type === 'spawn' && a.repo && a.task) void activeGrid.spawnFromName(a.repo, a.base ?? null, a.task);
+		});
+
+		// 📱 Phone button → panel with the Tailscale URLs to open on your phone.
+		let phonePanel: HTMLElement | null = null;
+		phoneBtn.addEventListener('click', () => {
+			if (phonePanel) { phonePanel.remove(); phonePanel = null; return; }
+			void window.wcc.remoteInfo().then((info) => {
+				phonePanel = appEl.createDiv({ cls: 'wcc-phone-panel' });
+				phonePanel.createDiv({ cls: 'wcc-phone-h', text: '📱 Phone floor view' });
+				phonePanel.createDiv({ cls: 'wcc-phone-sub', text: 'Open one of these on your phone (same Tailscale network):' });
+				for (const u of info.urls) phonePanel.createEl('div', { cls: 'wcc-phone-url', text: u });
+				const close = phonePanel.createEl('button', { cls: 'wcc-phone-close', text: 'Close' });
+				close.addEventListener('click', () => { phonePanel?.remove(); phonePanel = null; });
+			});
+		});
 
 		addFolderBtn.addEventListener('click', () => {
 			void (async () => {

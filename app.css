@@ -177,3 +177,10 @@ html, body {
 .wcc-tab-close:hover { color: var(--text-normal); }
 .wcc-tab-add { background: transparent; border: 1px dashed var(--background-modifier-border); border-radius: 7px; color: var(--text-muted); cursor: pointer; font-size: 12px; padding: 5px 10px; }
 .wcc-tab-add:hover { color: var(--text-normal); border-color: var(--text-muted); }
+
+/* 📱 Phone access panel. */
+.wcc-phone-panel { position: absolute; right: 12px; top: 46px; z-index: 1300; background: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: 10px; box-shadow: 0 12px 36px rgba(0,0,0,.55); padding: 12px 14px; max-width: 460px; }
+.wcc-phone-h { font-weight: 600; margin-bottom: 4px; }
+.wcc-phone-sub { color: var(--text-muted); font-size: 12px; margin-bottom: 8px; }
+.wcc-phone-url { font-family: var(--font-monospace); font-size: 12.5px; color: var(--color-cyan); background: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: 6px; padding: 6px 9px; margin-bottom: 6px; user-select: all; word-break: break-all; }
+.wcc-phone-close { margin-top: 4px; background: var(--background-secondary-alt); color: var(--text-normal); border: 1px solid var(--background-modifier-border); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
