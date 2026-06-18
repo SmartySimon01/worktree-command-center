@@ -129,6 +129,18 @@ export class GodConsole {
 	focus(): void { this.term?.focus(); }
 	blur(): void { this.term?.blur(); }
 
+	/** Last ≤20 non-blank lines of Kane's buffer — for the phone floor view. */
+	recentOutput(): string {
+		const t = this.term;
+		if (!t) return '';
+		const buf = t.buffer.active; const lines: string[] = [];
+		for (let i = buf.length - 1; i >= 0 && lines.length < 20; i--) {
+			const row = buf.getLine(i); if (!row) continue;
+			const s = row.translateToString(true).trimEnd(); if (s) lines.unshift(s);
+		}
+		return lines.join('\n');
+	}
+
 	/** Inject a line into Kane's session (text + a separated Enter so ConPTY can't coalesce
 	 *  them) — used to ping him when a watch fires. */
 	notify(text: string): void {

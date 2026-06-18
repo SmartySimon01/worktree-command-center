@@ -14,11 +14,12 @@ import { emptyState, applyKeystroke, onReady as rqReady, onSubmit as rqSubmit, o
 import { partitionByHidden } from './session-partition';
 import { GodConsole } from './god-console';
 import { slug as godSlug, formatFloorSnapshot, formatFloorIndex, parseOutboxMessage, resolveTellTarget, type OutboxMessage } from './god';
-import { looksLikeMenu } from './prompt-detect';
+import { looksLikeMenu, looksErrored } from './prompt-detect';
 import { looksLikePrompt } from './chat-room';
 import { classifyAttention, type AttentionItem } from './attention';
 
 export interface RepoConfig { name: string; path: string; remote?: string; group?: string; }
+export interface RemoteTerminal { id: number; name: string; repo: string; branch: string; state: string; output: string; remoteOn: boolean; }
 
 export interface GridDeps {
 	repos: RepoConfig[];
@@ -305,11 +306,9 @@ export class TerminalsGrid {
 	/** Kane asked to spawn a terminal: resolve the repo by name, default the base branch, start
 	 *  it on the given task. */
 	private async spawnFromKane(repoName: string, base: string | null, task: string): Promise<void> {
-		const repo = this.repos.find((r) => r.name === repoName)
-			?? this.repos.find((r) => r.name.toLowerCase() === repoName.toLowerCase());
-		if (!repo) { this.writeGodInbox(`cannot spawn — unknown repo "${repoName}". Known: ${this.repos.map((r) => r.name).join(', ') || '(none)'}`); return; }
-		const baseBranch = base ?? (defaultBranch(await listBranches(repo.path)) ?? 'main');
-		await this.spawnWorktree(repo, baseBranch, { task });
+		const known = this.repos.some((r) => r.name === repoName || r.name.toLowerCase() === repoName.toLowerCase());
+		if (!known) { this.writeGodInbox(`cannot spawn — unknown repo "${repoName}". Known: ${this.repos.map((r) => r.name).join(', ') || '(none)'}`); return; }
+		await this.spawnFromName(repoName, base, task);
 	}
 
 	/** Open the repo selected in the dropdown in a VS Code window. */
@@ -409,6 +408,45 @@ export class TerminalsGrid {
 	revealTile(id: number): void {
 		if (this.hidden.some((t) => t.tileId === id)) { this.showTile(id); return; }
 		if (this.tiles.some((t) => t.tileId === id)) { this.doCenter(id); this.focusCentered(); }
+	}
+
+	private tileState(t: TerminalTile): string {
+		const o = t.recentOutput();
+		if (looksLikePrompt(o)) return 'prompt';
+		if (looksLikeMenu(o)) return 'menu';
+		if (looksErrored(o)) return 'errored';
+		return this.idleTiles.has(t.tileId) ? 'idle' : 'running';
+	}
+
+	/** Floor snapshot for the phone view: every session (+ Kane) with state + recent output. */
+	floorState(): RemoteTerminal[] {
+		const out: RemoteTerminal[] = this.allSessions().map((t) => ({
+			id: t.tileId, name: t.name, repo: this.repoNameFor(t), branch: t.branch,
+			state: this.tileState(t), output: t.recentOutput().split('\n').slice(-12).join('\n'), remoteOn: t.isRemoteOn,
+		}));
+		if (this.godConsole) {
+			const ko = this.godConsole.recentOutput();
+			out.unshift({
+				id: -1, name: 'Kane', repo: '—', branch: '—',
+				state: looksLikePrompt(ko) ? 'prompt' : looksLikeMenu(ko) ? 'menu' : 'running',
+				output: ko.split('\n').slice(-12).join('\n'), remoteOn: false,
+			});
+		}
+		return out;
+	}
+
+	repoNames(): string[] { return this.repos.map((r) => r.name); }
+
+	/** Toggle remote-control on a terminal by id (from the phone). */
+	toggleRemoteById(id: number): void { this.allSessions().find((t) => t.tileId === id)?.toggleRemoteControl(); }
+
+	/** Spawn a worktree terminal for a repo by name, on a base, with a kickoff task. */
+	async spawnFromName(repoName: string, base: string | null, task: string): Promise<TerminalTile | null> {
+		const repo = this.repos.find((r) => r.name === repoName)
+			?? this.repos.find((r) => r.name.toLowerCase() === repoName.toLowerCase());
+		if (!repo) return null;
+		const baseBranch = base ?? (defaultBranch(await listBranches(repo.path)) ?? 'main');
+		return this.spawnWorktree(repo, baseBranch, { task });
 	}
 
 	/** Toggle the GOD console: spawn on first open, then just show/hide (session persists). */
