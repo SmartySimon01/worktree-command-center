@@ -21,6 +21,7 @@ import { looksLikePrompt } from './chat-room';
 import { classifyAttention, type AttentionItem } from './attention';
 import { JournalTile } from './journal-tile';
 import { JournalStore } from './journal-store';
+import { FormatProbe } from './format-probe';
 import type { StageTile } from './stage-tile';
 
 export interface RepoConfig { name: string; path: string; remote?: string; group?: string; }
@@ -65,6 +66,7 @@ export class TerminalsGrid {
 	private tiles: StageTile[] = [];
 	private hidden: StageTile[] = [];
 	private journalStore!: JournalStore;
+	private formatProbe!: FormatProbe;
 	private journalSeq = 0;
 	private nextTileId = 1;
 	private pendingNewBranch: string | null = null;
@@ -115,6 +117,7 @@ export class TerminalsGrid {
 		this.coordDir = deps.coordDir;
 		this.coordHookPath = deps.coordHookPath;
 		this.journalStore = new JournalStore(path.join(this.coordDir, 'journals'));
+		this.formatProbe = new FormatProbe({ sidecarPath: this.sidecarPath, cwd: this.coordDir });
 	}
 
 	/** Mount the grid into a page container. Sessions PERSIST across mounts (tab switches):
@@ -375,6 +378,7 @@ export class TerminalsGrid {
 					.then((name) => { if (name && name.trim()) { t.setName(name.trim()); void this.persist(); } });
 			},
 			onRename: () => { void this.persist(); },
+			onFormat: (text) => this.formatProbe.format(text),
 		});
 		if (this.stageEl) tile.render(this.stageEl);
 		this.tiles.push(tile);
@@ -962,6 +966,7 @@ export class TerminalsGrid {
 					onCenter: (t) => this.handleClick(t.tileId),
 					onRequestRename: (t, cur) => { void this.deps.promptForTopic('Rename journal', 'New name', cur, 'Rename').then((n) => { if (n && n.trim()) { t.setName(n.trim()); void this.persist(); } }); },
 					onRename: () => { void this.persist(); },
+					onFormat: (text) => this.formatProbe.format(text),
 				});
 				if (this.stageEl) tile.render(this.stageEl);
 				if (rec.hidden) { tile.setHidden(true); this.hidden.push(tile); } else { this.tiles.push(tile); }
