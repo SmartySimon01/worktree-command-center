@@ -15,6 +15,7 @@ export interface JournalTileOpts {
   onRequestRename: (tile: JournalTile, current: string) => void;
   onRename: () => void;
   toast: (msg: string) => void;
+  onFormat: (text: string) => Promise<string>;
 }
 
 /** A stage tile holding free-form notes (a textarea), not a Claude session. Saves to the
@@ -35,6 +36,9 @@ export class JournalTile implements StageTile {
   private dirty = false;
   private showingHistory = false;
   private currentText = '';
+  private fmtBtn: HTMLButtonElement | null = null;
+  private saveBtn: HTMLButtonElement | null = null;
+  private historyBtn: HTMLButtonElement | null = null;
 
   constructor(private opts: JournalTileOpts) {
     this.displayName = opts.name;
@@ -64,11 +68,12 @@ export class JournalTile implements StageTile {
     this.renderEditor();
 
     const actions = this.el.createDiv({ cls: 'cos-journal-actions' });
-    actions.createEl('button', { text: 'Save', cls: 'cos-journal-save' })
-      .addEventListener('click', (e) => { e.stopPropagation(); this.save(); });
-    actions.createEl('button', { text: 'See History', cls: 'cos-journal-history' })
-      .addEventListener('click', (e) => { e.stopPropagation(); this.toggleHistory(); });
-    actions.createEl('button', { text: 'Format', cls: 'cos-journal-soon', attr: { disabled: 'true', title: 'Coming soon (phase 2)' } });
+    this.saveBtn = actions.createEl('button', { text: 'Save', cls: 'cos-journal-save' }) as HTMLButtonElement;
+    this.saveBtn.addEventListener('click', (e) => { e.stopPropagation(); this.save(); });
+    this.historyBtn = actions.createEl('button', { text: 'See History', cls: 'cos-journal-history' }) as HTMLButtonElement;
+    this.historyBtn.addEventListener('click', (e) => { e.stopPropagation(); this.toggleHistory(); });
+    this.fmtBtn = actions.createEl('button', { text: 'Format', cls: 'cos-journal-fmt', attr: { title: 'Reformat with Claude — fixes indentation, keeps your words' } }) as HTMLButtonElement;
+    this.fmtBtn.addEventListener('click', (e) => { e.stopPropagation(); void this.format(); });
     actions.createEl('button', { text: 'Convert to Linear', cls: 'cos-journal-soon', attr: { disabled: 'true', title: 'Coming soon (phase 3)' } });
   }
 
@@ -133,6 +138,41 @@ export class JournalTile implements StageTile {
     this.dirty = false;
     this.opts.onRename();
     this.opts.toast(`Saved "${this.displayName}"`);
+  }
+
+  private setFooterDisabled(on: boolean): void {
+    for (const b of [this.saveBtn, this.historyBtn, this.fmtBtn]) if (b) b.disabled = on;
+  }
+
+  private async format(): Promise<void> {
+    const before = this.textarea?.value ?? this.currentText;
+    if (before.trim() === '') { this.opts.toast('Nothing to format'); return; }
+    this.currentText = before;
+    this.setFooterDisabled(true);
+    if (this.bodyEl) { this.bodyEl.empty(); this.bodyEl.createDiv({ cls: 'cos-journal-formatting', text: 'Formatting…' }); }
+    let after: string;
+    try { after = await this.opts.onFormat(before); }
+    catch { this.opts.toast('Format failed'); this.renderEditor(); this.setFooterDisabled(false); return; }
+    this.renderFormatPreview(before, after);
+  }
+
+  private renderFormatPreview(before: string, after: string): void {
+    if (!this.bodyEl) return;
+    this.bodyEl.empty();
+    const wrap = this.bodyEl.createDiv({ cls: 'cos-journal-preview' });
+    const pane = (title: string, text: string): void => {
+      const col = wrap.createDiv({ cls: 'cos-journal-pane' });
+      col.createDiv({ cls: 'cos-journal-pane-h', text: title });
+      const ta = col.createEl('textarea', { cls: 'cos-journal-text' }) as HTMLTextAreaElement;
+      ta.value = text; ta.readOnly = true;
+    };
+    pane('BEFORE', before);
+    pane('AFTER', after);
+    const bar = this.bodyEl.createDiv({ cls: 'cos-journal-preview-actions' });
+    bar.createEl('button', { text: 'Apply', cls: 'cos-journal-save' })
+      .addEventListener('click', (e) => { e.stopPropagation(); this.currentText = after; this.dirty = true; this.setFooterDisabled(false); this.renderEditor(); });
+    bar.createEl('button', { text: 'Discard' })
+      .addEventListener('click', (e) => { e.stopPropagation(); this.setFooterDisabled(false); this.renderEditor(); });
   }
 
   setName(name: string): void { this.displayName = name; this.nameEl?.setText(name); this.opts.onRename(); }
