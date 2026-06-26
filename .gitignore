@@ -4,3 +4,4 @@ release/
 pty-sidecar/contexts/
 *.log
 .DS_Store
+.superpowers/

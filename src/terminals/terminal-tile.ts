@@ -8,6 +8,7 @@ import { removeWorktreeAndBranch, terminalSystemPrompt, type WorktreeInfo } from
 import { scrollIntentForKey, type ScrollIntent } from './scroll-keys';
 import { FitThrottle } from './fit-throttle';
 import { ctrlClickActivator, openExternalUrl } from './links';
+import { promptForConfirm } from '../ui/prompt-dialog';
 
 export interface TerminalTileOpts {
 	tileId: number;
@@ -50,6 +51,7 @@ export class TerminalTile {
 	private displayName: string;
 	private pasting = false;
 	private selected = false;
+	private idle = false; // false = busy/starting; true once the session goes ready (refresh confirms only when busy)
 
 	constructor(private opts: TerminalTileOpts) {
 		this.displayName = opts.name ?? `${opts.repoName} · ${opts.worktree.branch}`;
@@ -65,6 +67,8 @@ export class TerminalTile {
 		this.nameEl.addEventListener('dblclick', (e) => { e.stopPropagation(); this.opts.onRequestRename?.(this, this.displayName); });
 		// Right-clustered controls: remote, lock, minimize (hide), close.
 		const btns = head.createDiv({ cls: 'cos-term-head-btns' });
+		const refreshBtn = btns.createEl('button', { text: '⟳', cls: 'cos-term-refresh', attr: { title: 'Refresh — reload this session with --continue (keeps its conversation, same position)' } });
+		refreshBtn.addEventListener('click', (e) => { e.stopPropagation(); void this.refresh(); });
 		this.remoteBtnEl = btns.createEl('button', { text: '📱', cls: 'cos-term-remote', attr: { title: 'Remote control via the Claude phone app — view + approve this session from your phone. (While on, this terminal asks permission instead of auto-running.)' } });
 		this.remoteBtnEl.addEventListener('click', (e) => { e.stopPropagation(); this.toggleRemoteControl(); });
 		this.lockBtnEl = btns.createEl('button', { text: '🔒', cls: 'cos-term-lock', attr: { title: 'Lock to center (Alt+L) — stays centered until you switch to another terminal' } });
@@ -77,7 +81,28 @@ export class TerminalTile {
 		this.el.addEventListener('click', () => this.opts.onCenter?.(this));
 
 		const body = this.el.createDiv({ cls: 'cos-term-body' });
-		this.term = new Terminal({ fontSize: 12, convertEol: false, cursorBlink: true, scrollback: 5000, theme: { background: '#0e0f17' } });
+		// New-TUI mouse reporting sends clicks straight to Claude (selecting whatever's under the
+		// cursor). Gate that on focus: a press on an UNcentered tile only FOCUSES it — swallow the
+		// whole press/release/click in the capture phase (before xterm's own mouse handlers) so it
+		// can't also select an option. Once centered, clicks pass through to Claude untouched.
+		// Scoped to the terminal body so the header buttons (lock/hide/close) still work unfocused.
+		let swallowingClick = false;
+		body.addEventListener('mousedown', (e) => {
+			// Ctrl/Cmd+click is a link-open gesture — never swallow it, so it reaches xterm's link
+			// handler (opens the URL) regardless of which tile is focused.
+			swallowingClick = !this.centered && !(e.ctrlKey || e.metaKey);
+			if (!swallowingClick) return;
+			e.preventDefault(); e.stopImmediatePropagation();
+			this.opts.onCenter?.(this);
+		}, true);
+		body.addEventListener('mouseup', (e) => { if (swallowingClick) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
+		body.addEventListener('click', (e) => { if (swallowingClick) { e.preventDefault(); e.stopImmediatePropagation(); swallowingClick = false; } }, true);
+		this.term = new Terminal({ fontSize: 12, convertEol: false, cursorBlink: true, scrollback: 5000, theme: { background: '#0e0f17' },
+			// OSC 8 terminal hyperlinks (the new Claude TUI emits links this way) — open them in the
+			// real browser on Ctrl/Cmd+click. WITHOUT this, xterm's OscLinkProvider falls back to its
+			// built-in "Do you want to navigate… could be dangerous" confirm instead of opening.
+			linkHandler: { activate: (e, uri) => { if (e.ctrlKey || e.metaKey) openExternalUrl(uri); } },
+		});
 		this.fit = new FitAddon();
 		this.term.loadAddon(this.fit);
 		this.term.open(body);
@@ -108,6 +133,11 @@ export class TerminalTile {
 			}
 			const intent = scrollIntentForKey(e);
 			if (!intent) return true;
+			// New flicker-free TUI keeps the conversation in the ALTERNATE screen buffer, so there is
+			// no xterm scrollback to move — translate our Shift+nav into Claude's own native scroll
+			// keys (PgUp/PgDn, Ctrl+Home/End) and send them down the PTY. In the classic normal-buffer
+			// TUI we still own the scrollback, so scroll xterm directly.
+			if (this.term?.buffer.active.type === 'alternate') { this.sendScrollKey(intent); return false; }
 			this.applyScroll(intent);
 			return false;
 		});
@@ -135,28 +165,13 @@ export class TerminalTile {
 		});
 		this.fitSoon();
 
-		const args = this.opts.resume ? ['--continue'] : [];
-		if (this.opts.bypassPermissions) args.push('--dangerously-skip-permissions');
-		const ctxFile = this.writeContextFile();
-		if (ctxFile) args.push('--append-system-prompt-file', ctxFile);
-		const sidecarDir = path.dirname(this.opts.sidecarPath);
-		const env: Record<string, string> = {
-			COS_COORD_DIR: this.opts.coordDir,
-			COS_TERMINAL_ID: String(this.opts.tileId),
-			COS_TERMINAL_NAME: this.displayName,
-			PATH: sidecarDir + path.delimiter + (process.env.PATH ?? ''),
-		};
-		this.bridge = new SessionBridge(this.opts.sidecarPath, this.opts.worktree.worktreePath, 'claude', args, env);
-		this.bridge.onData((d) => this.term?.write(d));
-		this.bridge.onExit((code) => this.term?.write(`\r\n[session ended (code ${code ?? '?'})]\r\n`));
-		this.bridge.onReady(() => this.opts.onReady?.(this));
 		this.term.onData((d) => {
 			this.bridge?.write(d);
 			if (this.pasting) return; // pasted content (incl. its newlines) is NOT a submit
-			if (d.includes('\r')) this.opts.onEnter?.(this);
+			if (d.includes('\r')) { this.idle = false; this.opts.onEnter?.(this); }
 			else this.opts.onInput?.(this, d);
 		});
-		this.bridge.start();
+		this.startSession(this.opts.resume ?? false);
 
 		this.el.addEventListener('focusin', () => this.opts.onFocusChange?.(this, true));
 		this.el.addEventListener('focusout', () => this.opts.onFocusChange?.(this, false));
@@ -169,6 +184,7 @@ export class TerminalTile {
 			this.readyWatcher = fs.watch(this.opts.worktree.worktreePath, (_evt, file) => {
 				if (file === '.cos-ready') {
 					try { fs.unlinkSync(path.join(this.opts.worktree.worktreePath, '.cos-ready')); } catch { /* ignore */ }
+					this.idle = true;
 					this.opts.onReady?.(this);
 				}
 			});
@@ -183,6 +199,11 @@ export class TerminalTile {
 		this.el.style.width = `${r.w}px`;
 		this.el.style.height = `${r.h}px`;
 		this.fitSoon();
+		// A satellite's PTY isn't refit to its (smaller) box, so its xterm can be taller than the
+		// tile. Keep the LATEST line in view — paired with the bottom-anchored satellite body CSS,
+		// the newest output stays visible instead of the top of the buffer showing. The centered
+		// tile is left alone so its scrollback can be scrolled freely.
+		if (!this.centered) this.term?.scrollToBottom();
 	}
 
 	/** Show/hide the Alt-overlay shortcut key on this tile. */
@@ -196,6 +217,7 @@ export class TerminalTile {
 		this.centered = on;
 		this.el?.toggleClass('centered', on);
 		if (on) this.fitSoon(); // fit the PTY to the centered size (after the size animation settles)
+		else this.term?.scrollToBottom(); // leaving center: snap the (un-refit) satellite to its latest line
 	}
 
 	/** Reflect this tile's individual-lock state (gold ring + lit lock button). */
@@ -303,6 +325,20 @@ export class TerminalTile {
 		else t.scrollToBottom();
 	}
 
+	/** Alternate-screen (flicker-free) TUI: there's no xterm scrollback, so map a scroll intent to
+	 *  Claude's native scroll keys and send them down the PTY — PgUp/PgDn for up/down, Ctrl+Home /
+	 *  Ctrl+End for top/bottom (Claude's defaults: scroll:pageUp/Down, scroll:top/bottom). */
+	private sendScrollKey(intent: ScrollIntent): void {
+		let seq: string;
+		if (intent.kind === 'top') seq = '\x1b[1;5H';                 // Ctrl+Home -> scroll to top
+		else if (intent.kind === 'bottom') seq = '\x1b[1;5F';         // Ctrl+End  -> scroll to bottom
+		else if (intent.kind === 'pages') seq = intent.amount < 0 ? '\x1b[5~' : '\x1b[6~';  // PgUp / PgDn
+		// Line scroll (Shift+Up/Down): one SGR mouse-wheel tick = scroll:lineUp/Down, which moves
+		// CLAUDE_CODE_SCROLL_SPEED (default 3) lines — matching the old 3-line xterm scroll, not a page.
+		else seq = intent.amount < 0 ? '\x1b[<64;1;1M' : '\x1b[<65;1;1M';  // wheel up / down
+		this.bridge?.write(seq);
+	}
+
 	/** Electron's clipboard (reliable & synchronous in Obsidian), or null outside Electron. */
 	private electronClipboard(): { readText?: () => string; writeText?: (t: string) => void } | null {
 		try {
@@ -401,5 +437,44 @@ export class TerminalTile {
 			await removeWorktreeAndBranch(this.opts.repoPath, this.opts.worktree.worktreePath, this.opts.worktree.branch);
 		} catch { /* best effort */ }
 		this.opts.onClosed(this);
+	}
+
+	/** Build args/env, create the session bridge, wire it, and start it. Called once from the
+	 *  constructor and again by refresh() (resume=true → claude --continue). */
+	private startSession(resume: boolean): void {
+		const args = resume ? ['--continue'] : [];
+		if (this.opts.bypassPermissions) args.push('--dangerously-skip-permissions');
+		const ctxFile = this.writeContextFile();
+		if (ctxFile) args.push('--append-system-prompt-file', ctxFile);
+		const sidecarDir = path.dirname(this.opts.sidecarPath);
+		const env: Record<string, string> = {
+			COS_COORD_DIR: this.opts.coordDir,
+			COS_TERMINAL_ID: String(this.opts.tileId),
+			COS_TERMINAL_NAME: this.displayName,
+			PATH: sidecarDir + path.delimiter + (process.env.PATH ?? ''),
+		};
+		this.bridge = new SessionBridge(this.opts.sidecarPath, this.opts.worktree.worktreePath, 'claude', args, env);
+		this.bridge.onData((d) => this.term?.write(d));
+		this.bridge.onExit((code) => this.term?.write(`\r\n[session ended (code ${code ?? '?'})]\r\n`));
+		this.bridge.onReady(() => { this.idle = true; this.opts.onReady?.(this); });
+		this.bridge.start();
+	}
+
+	/** Refresh: kill the running claude process and relaunch it with --continue in this SAME tile
+	 *  (position/center/lock preserved), resuming the conversation. Confirms first only if the
+	 *  session is mid-task (not idle), since that interrupts the in-flight turn. */
+	async refresh(): Promise<void> {
+		if (!this.idle) {
+			const ok = await promptForConfirm(
+				`Refresh "${this.displayName}"?`,
+				'This session is still working. Refreshing interrupts the current turn and reloads it with --continue (the conversation is kept).',
+				'Refresh',
+			);
+			if (!ok) return;
+		}
+		this.bridge?.kill();
+		this.term?.reset();
+		this.idle = false;
+		this.startSession(true);
 	}
 }

@@ -7,10 +7,12 @@ import { nextWorktreeBranch, parseWorktreeList, parseStatusPorcelain, parseAhead
 import { runCommand } from '../command-runner';
 import { TerminalTile } from './terminal-tile';
 import { BoardView } from './board-view';
+import { promptForConfirm } from '../ui/prompt-dialog';
 import { ChatRoom } from './chat-room';
 import { ChatTile } from './chat-tile';
 import { settledLayout, centeredLayout, keyForIndex, keyToIndex } from './bubble-layout';
 import { emptyState, applyKeystroke, onReady as rqReady, onSubmit as rqSubmit, onClose as rqClose, onClick as rqClick, cycleNext as rqCycleNext, cyclePrev as rqCyclePrev } from './ready-queue';
+import { decideCenter, type SpotlightState } from './focus-decider';
 import { partitionByHidden } from './session-partition';
 import { GodConsole } from './god-console';
 import { slug as godSlug, formatFloorSnapshot, formatFloorIndex, parseOutboxMessage, resolveTellTarget, type OutboxMessage } from './god';
@@ -34,6 +36,19 @@ export interface GridDeps {
 	promptForTopic: (title: string, placeholder: string, initial?: string, okLabel?: string) => Promise<string | null>;
 }
 interface SessionRecord { worktreePath: string; branch: string; repoName: string; repoPath: string; baseBranch: string; name?: string; hidden?: boolean; }
+
+// --- Kane personality mode (toggled by his /personality command) ---
+const KANE_PERSONA_ON =
+	'[personality: ON] Speak as Kane the forge-master from now on — terse, gruff, dry, in command ' +
+	'of the floor; the worker terminals are your smiths and their branches are iron on the anvil. ' +
+	'Drop the odd forge/river turn of phrase, never flowery. Keep doing your job exactly as before ' +
+	'(same tools, same restraint — you still do not run the floor unprompted), just in that voice. ' +
+	'Periodically you will get a line starting "[pulse]" — answer each with ONE punchy sentence on ' +
+	'the floor\'s state right now. Confirm now with a single line, in character.';
+const KANE_PERSONA_OFF =
+	'[personality: OFF] Drop the forge-master voice — back to your plain, neutral overseer tone. ' +
+	'The "[pulse]" nudges have stopped; ignore any you still see. Acknowledge in one short line.';
+const KANE_PULSE = '[pulse] One line, in character: what\'s the floor doing right now?';
 
 /** Controls bar + a bubbling stage of embedded claude terminals, scoped to one repo group. */
 export class TerminalsGrid {
@@ -62,6 +77,9 @@ export class TerminalsGrid {
 	private godBtn: HTMLButtonElement | null = null;
 	private godConsole: GodConsole | null = null;
 	private godVisible = false;
+	private kanePersonality = false;          // off = Kane behaves exactly as today (no persona, no pulses)
+	private pulseTimer: number | null = null;
+	private readonly pulseMs = 12 * 60 * 1000; // proactive floor-pulse cadence while personality is on
 	private watchers: Array<{ target: string; note: string }> = [];
 	private pendingTask = new Map<number, string>();
 	private idleTiles = new Set<number>();
@@ -82,6 +100,8 @@ export class TerminalsGrid {
 	private scanTimer: number | null = null;
 	private coordWatcher: import('fs').FSWatcher | null = null;
 	private scanDebounce: number | null = null;
+	private stageResizeObs: ResizeObserver | null = null;
+	private layoutRaf: number | null = null;
 
 	constructor(private deps: GridDeps) {
 		this.sidecarPath = deps.sidecarPath;
@@ -149,6 +169,7 @@ export class TerminalsGrid {
 			(branch) => void this.reopenAndOpen(branch),
 			() => this.hidden.map((t) => ({ tileId: t.tileId, name: t.name, branch: t.branch, repo: t.repoName })),
 			(tileId) => this.showTile(tileId),
+			(tileId) => void this.closeHiddenTile(tileId),
 		);
 		this.board.mount(parent);
 
@@ -172,6 +193,11 @@ export class TerminalsGrid {
 			// Keep Escape inside the terminal: xterm (the focused target) gets it first and
 			// forwards it to Claude; stopping it here prevents it bubbling to Obsidian.
 			this.stageEl.addEventListener('keydown', (e) => { if (e.key === 'Escape') e.stopPropagation(); });
+			// Re-lay-out on ANY stage size change, not just window resize — the Coordination board
+			// growing/collapsing resizes the stage with no resize event, which otherwise leaves the
+			// bottom row sized for the old (taller) stage and clipped below it.
+			this.stageResizeObs = new ResizeObserver(() => this.scheduleLayout());
+			this.stageResizeObs.observe(this.stageEl);
 			await this.refreshBranches();
 			await this.restoreSessions();
 		} else {
@@ -195,6 +221,7 @@ export class TerminalsGrid {
 		if (this.onWinFocus) window.removeEventListener('focus', this.onWinFocus);
 		if (this.onWinBlur) window.removeEventListener('blur', this.onWinBlur);
 		window.removeEventListener('resize', this.onResize);
+		if (this.layoutRaf !== null) { window.cancelAnimationFrame(this.layoutRaf); this.layoutRaf = null; }
 		if (this.scanTimer !== null) { window.clearInterval(this.scanTimer); this.scanTimer = null; }
 		if (this.scanDebounce !== null) { window.clearTimeout(this.scanDebounce); this.scanDebounce = null; }
 		this.coordWatcher?.close(); this.coordWatcher = null;
@@ -211,7 +238,16 @@ export class TerminalsGrid {
 		this.stageWrapEl?.remove();
 	}
 
-	private onResize = (): void => this.applyLayout();
+	private onResize = (): void => this.scheduleLayout();
+
+	/** Coalesce layout requests into one applyLayout on the next frame. Fired on window resize AND
+	 *  by the stage ResizeObserver — the stage shrinks whenever the Coordination board (a flex
+	 *  sibling, up to 38vh) populates/expands, which emits no window-resize event. Re-running the
+	 *  layout against the stage's CURRENT height keeps the bottom row from overflowing it. */
+	private scheduleLayout(): void {
+		if (this.layoutRaf !== null) return;
+		this.layoutRaf = window.requestAnimationFrame(() => { this.layoutRaf = null; this.applyLayout(); });
+	}
 
 	private installKeyboard(): void {
 		this.keydown = (e: KeyboardEvent) => {
@@ -566,9 +602,38 @@ export class TerminalsGrid {
 			const name = resolveTellTarget(msg.target, liveNames);
 			if (name) this.watchers.push({ target: name, note: msg.note });
 			else this.writeGodInbox(`cannot watch "${msg.target}" — not a live terminal. Live: ${liveNames.join(', ') || '(none)'}`);
+		} else if (msg.kind === 'personality') {
+			this.togglePersonality();
 		} else {
 			void this.spawnFromKane(msg.repo, msg.base, msg.task);
 		}
+	}
+
+	/** Flip Kane's personality mode (triggered by his `/personality` command). On = inject the
+	 *  forge-master persona + start periodic floor pulses; off = revert to the plain overseer
+	 *  voice + stop pulses. State is app-side so the pulse cadence is gated cleanly. */
+	private togglePersonality(): void {
+		this.kanePersonality = !this.kanePersonality;
+		if (this.kanePersonality) {
+			this.godConsole?.notify(KANE_PERSONA_ON);
+			this.startPulse();
+		} else {
+			this.godConsole?.notify(KANE_PERSONA_OFF);
+			this.stopPulse();
+		}
+	}
+
+	/** Begin nudging Kane for a one-line floor pulse on a fixed cadence (only while he's visible —
+	 *  no point pulsing a hidden panel). */
+	private startPulse(): void {
+		if (this.pulseTimer !== null) return;
+		this.pulseTimer = window.setInterval(() => {
+			if (this.kanePersonality && this.godVisible) this.godConsole?.notify(KANE_PULSE);
+		}, this.pulseMs);
+	}
+
+	private stopPulse(): void {
+		if (this.pulseTimer !== null) { window.clearInterval(this.pulseTimer); this.pulseTimer = null; }
 	}
 
 	/** Leave GOD an error note he can read back. */
@@ -668,6 +733,38 @@ export class TerminalsGrid {
 		return this.centeredId === null ? undefined : this.tiles.find((t) => t.tileId === this.centeredId);
 	}
 
+	/** A visible tile's state for the spotlight decision. A permission prompt / selection menu
+	 *  is "waiting for you" even mid-turn; a settled-but-errored tile outranks a clean idle one.
+	 *  Anything still streaming output is `thinking` and never grabs the center on its own.
+	 *  (`errored` is gated behind idle so a streaming tile that merely prints the word "error"
+	 *  can't steal focus.) */
+	private spotlightState(t: TerminalTile): SpotlightState {
+		const o = t.recentOutput();
+		if (looksLikePrompt(o)) return 'prompt';
+		if (looksLikeMenu(o)) return 'menu';
+		const idle = this.idleTiles.has(t.tileId);
+		if (idle && looksErrored(o)) return 'errored';
+		return idle ? 'idle' : 'thinking';
+	}
+
+	/** Re-derive the spotlight from the floor's CURRENT state and apply it. The single funnel
+	 *  every auto (non-click) path runs through, so the center can't get stranded on a thinking
+	 *  tile: a tile that needs you wins, and when everyone is thinking the grid drops to equal
+	 *  size (no spotlight). Manual clicks/cycles still set the center directly. */
+	private autoCenter(): void {
+		const want = decideCenter({
+			tiles: this.tiles.map((t) => ({ id: t.tileId, state: this.spotlightState(t) })),
+			centeredId: this.centeredId,
+			readyOrder: this.q.stack,
+			userTyping: this.q.composingLen > 0,
+			globalLock: this.locked,
+			lockedTileId: this.lockedTileId,
+		});
+		if (want === this.centeredId) return;          // no change → don't re-lay-out (avoids flicker)
+		if (want === null) { this.centeredId = null; this.applyLayout(); return; } // equal grid
+		this.doCenter(want);
+	}
+
 	private handleReady(t: TerminalTile): void {
 		// Fire any one-shot watch whose target just finished — idle and NOT stalled on a prompt.
 		if (this.watchers.some((w) => w.target === t.name)) {
@@ -686,13 +783,10 @@ export class TerminalsGrid {
 
 		if (this.hidden.includes(t)) return; // a hidden, background session never steals the center
 		if (this.chatRoom) { this.chatRoom.noteIdle(t.name); return; } // chat owns idle while open
-		const r = rqReady(this.q, t.tileId);
-		this.q = r.state;
-		// Auto-lock: don't let a sibling going idle steal focus while you're mid-way through a
-		// selection menu in the centered tile.
-		const cur = this.centeredTile();
-		if (cur && cur.tileId !== t.tileId && looksLikeMenu(cur.recentOutput())) return;
-		if (!this.locked && this.lockedTileId === null && r.center !== null) this.doCenter(r.center);
+		this.q = rqReady(this.q, t.tileId).state; // record readiness + recency on the stack
+		// autoCenter re-derives the spotlight from current state — the lock / menu / typing holds
+		// and the "thinking tiles never hold the center" rule all live there now.
+		this.autoCenter();
 	}
 
 	private handleSubmit(t: TerminalTile): void {
@@ -702,10 +796,10 @@ export class TerminalsGrid {
 		// submitting a prompt — don't bubble focus away, so a multi-select can be finished in one
 		// go. (The Lock button does this globally; this does it automatically for menus.)
 		if (looksLikeMenu(t.recentOutput())) return;
-		const r = rqSubmit(this.q, t.tileId);
-		this.q = r.state;
-		// Locked (global or individual): submitting doesn't pull the next terminal to center.
-		if (!this.locked && this.lockedTileId === null && r.center !== null) this.doCenter(r.center);
+		this.q = rqSubmit(this.q, t.tileId).state; // finished with it → off the ready stack
+		// Re-derive: center the next tile that needs you, or drop to the equal grid if everyone
+		// is now thinking (nobody is waiting on you).
+		this.autoCenter();
 	}
 
 	/** Hide a tile: pull it off the stage but keep its session + worktree alive.
@@ -738,6 +832,25 @@ export class TerminalsGrid {
 		this.centeredId = tile.tileId;
 		this.applyLayout();
 		this.focusCentered();
+		void this.persist();
+		this.board?.refresh();
+	}
+
+	/** Close a hidden tile from the Coordination panel: confirm, then kill its session and
+	 *  remove the worktree + branch (same as the tile ×), and drop it from the hidden list. */
+	private async closeHiddenTile(tileId: number): Promise<void> {
+		const tile = this.hidden.find((t) => t.tileId === tileId);
+		if (!tile) return;
+		const ok = await promptForConfirm(
+			`Close "${tile.name}"?`,
+			`This kills the session and removes its worktree + branch (${tile.branch}). It can't be undone.`,
+			'Close',
+		);
+		if (!ok) return;
+		this.hidden = this.hidden.filter((t) => t !== tile);
+		this.idleTiles.delete(tile.tileId);
+		if (this.lockedTileId === tile.tileId) this.lockedTileId = null;
+		await tile.close(); // kill + removeWorktreeAndBranch + fires onClosed
 		void this.persist();
 		this.board?.refresh();
 	}
@@ -806,7 +919,9 @@ export class TerminalsGrid {
 	/** Full teardown (view close): unmount + kill all sessions. */
 	dispose(): void {
 		this.unmount();
+		this.stageResizeObs?.disconnect(); this.stageResizeObs = null;
 		this.board = null;
+		this.stopPulse();
 		this.godConsole?.dispose(); this.godConsole = null;
 		for (const t of this.tiles) t.kill();
 		for (const t of this.hidden) t.kill();

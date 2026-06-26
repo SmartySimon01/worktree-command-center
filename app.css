@@ -4,30 +4,32 @@
    AFTER styles.css so these win. */
 
 :root {
-	--background-primary: #0e0f17;
-	--background-primary-alt: #14151f;
-	--background-secondary: #171925;
-	--background-secondary-alt: #1f2130;
-	--background-modifier-border: #2a2d3e;
-	--background-modifier-border-hover: #3a3d52;
-	--background-modifier-hover: #232636;
-	--background-modifier-error: #4a2030;
-	--background-modifier-error-rgb: 248, 81, 73;
-	--background-modifier-success: #173a2a;
-	--text-normal: #e3e5ee;
-	--text-muted: #9aa0b4;
-	--text-faint: #6b7186;
-	--text-on-accent: #ffffff;
-	--interactive-accent: #5b73ff;
-	--interactive-accent-hover: #7286ff;
-	--cos-accent: #5b73ff;
-	--cos-accent-hover: #7286ff;
-	--color-green: #3fb950;
-	--color-red: #f85149;
-	--color-cyan: #39c5cf;
-	--color-yellow: #d6a93a;
+	/* Forge & River theme: warm forge-charcoal surfaces, molten-gold accent, river-slate
+	   secondary. Terminals keep their own neutral-dark bg for readability. */
+	--background-primary: #100f0c;
+	--background-primary-alt: #16140f;
+	--background-secondary: #1b1813;
+	--background-secondary-alt: #241f17;
+	--background-modifier-border: #383128;
+	--background-modifier-border-hover: #524735;
+	--background-modifier-hover: #272015;
+	--background-modifier-error: #4a2418;
+	--background-modifier-error-rgb: 248, 113, 73;
+	--background-modifier-success: #1f3a24;
+	--text-normal: #ede7d8;
+	--text-muted: #a99f89;
+	--text-faint: #756c5a;
+	--text-on-accent: #1a1408;
+	--interactive-accent: #d39a2e;
+	--interactive-accent-hover: #efb947;
+	--cos-accent: #d39a2e;
+	--cos-accent-hover: #efb947;
+	--color-green: #48b87a;
+	--color-red: #f0623a;
+	--color-cyan: #6fa0c8;
+	--color-yellow: #e0b53a;
 	--font-monospace: 'Cascadia Code', 'JetBrains Mono', Consolas, 'Courier New', monospace;
-	--vscode-scrollbar-shadow: rgba(0, 0, 0, 0.4);
+	--vscode-scrollbar-shadow: rgba(0, 0, 0, 0.45);
 }
 
 html, body {
@@ -102,6 +104,10 @@ html, body {
 .cos-reg-detail { color: var(--text-faint); font-size: 11.5px; }
 .cos-reg-repo-tag { font-size: 11px; color: var(--text-muted); background: rgba(154,160,180,0.14); padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
 .cos-reopen-btn { margin-left: auto; padding: 2px 9px !important; font-size: 11px !important; }
+.cos-close-btn { padding: 2px 8px !important; font-size: 11px !important; color: var(--text-muted); opacity: 0.7; border-radius: 5px; }
+.cos-close-btn:hover { color: #fff; background: #d2453e; opacity: 1; }
+.cos-term-refresh { background: none; border: none; cursor: pointer; font-size: 12px !important; line-height: 1; opacity: 0.6; color: var(--text-muted); }
+.cos-term-refresh:hover { opacity: 1; color: var(--text-normal); }
 .cos-coord-hidden { display: flex; flex-direction: column; gap: 3px; margin-bottom: 8px; }
 .cos-term-hide { font-size: 15px !important; line-height: 1; }
 /* Filter box + dimmed (non-matching) tiles. */

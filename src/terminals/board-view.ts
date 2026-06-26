@@ -16,6 +16,7 @@ export class BoardView {
 		private onReopen: (branch: string) => void = () => {},
 		private hiddenProvider: () => Array<{ tileId: number; name: string; branch: string; repo: string }> = () => [],
 		private onShow: (tileId: number) => void = () => {},
+		private onClose: (tileId: number) => void = () => {},
 	) {}
 
 	mount(parent: HTMLElement): void {
@@ -80,6 +81,8 @@ export class BoardView {
 				if (h.branch && h.branch !== h.name) row.createSpan({ cls: 'cos-reg-detail', text: h.branch });
 				const btn = row.createEl('button', { text: 'Show', cls: 'cos-reopen-btn' });
 				btn.addEventListener('click', (e) => { e.stopPropagation(); this.onShow(h.tileId); });
+				const x = row.createEl('button', { text: '✕', cls: 'cos-close-btn', attr: { title: 'Close — removes the worktree + branch' } });
+				x.addEventListener('click', (e) => { e.stopPropagation(); this.onClose(h.tileId); });
 			}
 		}
 

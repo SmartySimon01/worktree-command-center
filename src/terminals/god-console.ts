@@ -8,6 +8,7 @@ import { godSystemPrompt, type GodRepo } from './god';
 import { scrollIntentForKey, type ScrollIntent } from './scroll-keys';
 import { FitThrottle } from './fit-throttle';
 import { ctrlClickActivator, openExternalUrl } from './links';
+import { promptForConfirm } from '../ui/prompt-dialog';
 
 export interface GodConsoleOpts {
 	repos: GodRepo[];
@@ -27,6 +28,8 @@ export class GodConsole {
 	private bridge: SessionBridge | null = null;
 	private resizeObs: ResizeObserver | null = null;
 	private fitThrottle: FitThrottle | null = null;
+	private busy = false;            // approximate: true while output is actively streaming
+	private busyTimer: number | null = null;
 
 	constructor(private opts: GodConsoleOpts, private onHide: () => void) {}
 
@@ -37,11 +40,17 @@ export class GodConsole {
 		this.el = parent.createDiv({ cls: 'cos-god-panel' });
 		const head = this.el.createDiv({ cls: 'cos-god-head' });
 		head.createSpan({ text: '🜲 Kane' });
+		const refreshBtn = head.createEl('button', { text: '⟳', cls: 'cos-term-refresh', attr: { title: 'Refresh Kane — reload with --continue (keeps the conversation)' } });
+		refreshBtn.addEventListener('click', (e) => { e.stopPropagation(); void this.refresh(); });
 		const hide = head.createEl('button', { text: '×', attr: { title: 'Hide Kane (session keeps running)' } });
 		hide.addEventListener('click', (e) => { e.stopPropagation(); this.onHide(); });
 
 		this.bodyEl = this.el.createDiv({ cls: 'cos-god-body' });
-		this.term = new Terminal({ fontSize: 12, convertEol: false, cursorBlink: true, scrollback: 5000, theme: { background: '#0e0f17' } });
+		this.term = new Terminal({ fontSize: 12, convertEol: false, cursorBlink: true, scrollback: 5000, theme: { background: '#0e0f17' },
+			// OSC 8 hyperlinks from the new Claude TUI — open in the real browser on Ctrl/Cmd+click
+			// instead of xterm's built-in "navigate… could be dangerous" confirm (no linkHandler set).
+			linkHandler: { activate: (e, uri) => { if (e.ctrlKey || e.metaKey) openExternalUrl(uri); } },
+		});
 		this.fit = new FitAddon();
 		this.term.loadAddon(this.fit);
 		this.term.open(this.bodyEl);
@@ -75,6 +84,10 @@ export class GodConsole {
 			}
 			const intent = scrollIntentForKey(e);
 			if (!intent) return true;
+			// New flicker-free TUI keeps the conversation in the ALTERNATE screen buffer (no xterm
+			// scrollback) — translate Shift+nav into Claude's native scroll keys down the PTY. The
+			// classic normal-buffer TUI still has scrollback, so scroll xterm there.
+			if (this.term?.buffer.active.type === 'alternate') { this.sendScrollKey(intent); return false; }
 			this.applyScroll(intent);
 			return false;
 		});
@@ -97,8 +110,19 @@ export class GodConsole {
 		});
 		this.fitSoon();
 
+		this.term.onData((d) => this.bridge?.write(d));
+		this.startSession(false);
+
+		this.resizeObs = new ResizeObserver(() => this.fitSoon());
+		this.resizeObs.observe(this.bodyEl);
+	}
+
+	/** Build args/env, create Kane's session bridge, wire it, and start it. Called from render()
+	 *  and from refresh() (resume=true → claude --continue, resuming Kane's conversation). */
+	private startSession(resume: boolean): void {
 		const ctxFile = this.writeSystemPromptFile();
-		const args: string[] = [];
+		this.writeKaneCommands();
+		const args: string[] = resume ? ['--continue'] : [];
 		if (ctxFile) args.push('--append-system-prompt-file', ctxFile);
 		const sidecarDir = path.dirname(this.opts.sidecarPath);
 		const env: Record<string, string> = {
@@ -110,13 +134,31 @@ export class GodConsole {
 		};
 		fs.mkdirSync(this.opts.godHomeDir, { recursive: true });
 		this.bridge = new SessionBridge(this.opts.sidecarPath, this.opts.godHomeDir, 'claude', args, env);
-		this.bridge.onData((d) => this.term?.write(d));
+		this.bridge.onData((d) => { this.term?.write(d); this.markBusy(); });
 		this.bridge.onExit((code) => this.term?.write(`\r\n[Kane session ended (code ${code ?? '?'})]\r\n`));
-		this.term.onData((d) => this.bridge?.write(d));
 		this.bridge.start();
+	}
 
-		this.resizeObs = new ResizeObserver(() => this.fitSoon());
-		this.resizeObs.observe(this.bodyEl);
+	/** Kane has no ready-marker, so approximate "busy" from output activity: any output marks
+	 *  busy and (re)arms a short timer that clears it once output goes quiet. */
+	private markBusy(): void {
+		this.busy = true;
+		if (this.busyTimer !== null) window.clearTimeout(this.busyTimer);
+		this.busyTimer = window.setTimeout(() => { this.busy = false; this.busyTimer = null; }, 1500);
+	}
+
+	/** Refresh Kane: kill + relaunch with --continue in place, resuming his conversation.
+	 *  Confirms first only if he's mid-output. */
+	async refresh(): Promise<void> {
+		if (this.busy) {
+			const ok = await promptForConfirm('Refresh Kane?', 'Kane is mid-response. Refreshing interrupts it and reloads with --continue (the conversation is kept).', 'Refresh');
+			if (!ok) return;
+		}
+		if (this.busyTimer !== null) { window.clearTimeout(this.busyTimer); this.busyTimer = null; }
+		this.busy = false;
+		this.bridge?.kill();
+		this.term?.reset();
+		this.startSession(true);
 	}
 
 	/** Show/hide the panel WITHOUT killing the session. Refits on show. */
@@ -158,6 +200,18 @@ export class GodConsole {
 		else t.scrollToBottom();
 	}
 
+	/** Alternate-screen (flicker-free) TUI: no xterm scrollback, so map a scroll intent to Claude's
+	 *  native scroll keys down the PTY — wheel ticks for line up/down (≈3 lines, like before), PgUp/
+	 *  PgDn for page, Ctrl+Home/Ctrl+End for top/bottom. */
+	private sendScrollKey(intent: ScrollIntent): void {
+		let seq: string;
+		if (intent.kind === 'top') seq = '\x1b[1;5H';
+		else if (intent.kind === 'bottom') seq = '\x1b[1;5F';
+		else if (intent.kind === 'pages') seq = intent.amount < 0 ? '\x1b[5~' : '\x1b[6~';
+		else seq = intent.amount < 0 ? '\x1b[<64;1;1M' : '\x1b[<65;1;1M';
+		this.bridge?.write(seq);
+	}
+
 	/** Electron's clipboard (reliable & synchronous), or null outside Electron. */
 	private electronClipboard(): { readText?: () => string; writeText?: (t: string) => void } | null {
 		try {
@@ -188,6 +242,33 @@ export class GodConsole {
 	/** Coalesce resize bursts into a single fit + pty-resize (see FitThrottle). */
 	private fitSoon(): void {
 		this.fitThrottle?.schedule();
+	}
+
+	/** Drop a project-level `/personality` slash command + a scoped settings file into Kane's
+	 *  home dir. The command makes Kane run `cos-coord personality` (the app drains it and flips
+	 *  the mode); the settings pre-allow `cos-coord` so the toggle/tell/watch/spawn don't each
+	 *  pop a permission prompt. Everything else still prompts (Kane stays non-bypass). */
+	private writeKaneCommands(): void {
+		try {
+			const cmdDir = path.join(this.opts.godHomeDir, '.claude', 'commands');
+			fs.mkdirSync(cmdDir, { recursive: true });
+			fs.writeFileSync(path.join(cmdDir, 'personality.md'), [
+				'---',
+				'description: Toggle Kane\'s personality (forge-master persona + periodic floor pulses) on/off',
+				'---',
+				'Run exactly this command and nothing else, then confirm in one short line:',
+				'',
+				'```bash',
+				'cos-coord personality',
+				'```',
+				'',
+				'It toggles your personality mode — the app handles the persona switch and starts or',
+				'stops the periodic floor "[pulse]" nudges. Do not do anything else.',
+				'',
+			].join('\n'), 'utf8');
+			const settingsFile = path.join(this.opts.godHomeDir, '.claude', 'settings.json');
+			fs.writeFileSync(settingsFile, JSON.stringify({ permissions: { allow: ['Bash(cos-coord:*)'] } }, null, 2), 'utf8');
+		} catch { /* best effort — /personality still works, just with a permission prompt */ }
 	}
 
 	/** Write GOD's appended system prompt to his home dir; return the path (or null). */

@@ -9,7 +9,8 @@ export function slug(name: string): string {
 export type OutboxMessage =
 	| { kind: 'tell'; target: string; message: string }
 	| { kind: 'watch'; target: string; note: string }
-	| { kind: 'spawn'; repo: string; base: string | null; task: string };
+	| { kind: 'spawn'; repo: string; base: string | null; task: string }
+	| { kind: 'personality' };
 
 /** Parse one god-outbox JSON message into a typed command. An untagged {target,message} is
  *  read as a tell (back-compat). Returns null on malformed / missing fields. */
@@ -18,7 +19,9 @@ export function parseOutboxMessage(text: string): OutboxMessage | null {
 	try { o = JSON.parse(text); } catch { return null; }
 	if (!o || typeof o !== 'object') return null;
 	const kind = typeof o.kind === 'string' ? o.kind : 'tell';
-	if (kind === 'tell') {
+	if (kind === 'personality') {
+		return { kind: 'personality' };
+	} else if (kind === 'tell') {
 		if (typeof o.target === 'string' && typeof o.message === 'string' && o.target.trim() && o.message) {
 			return { kind: 'tell', target: o.target, message: o.message };
 		}

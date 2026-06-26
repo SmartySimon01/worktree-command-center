@@ -106,5 +106,6 @@ function dropOutbox(dir, obj) {
 function tell(dir, target, message) { return dropOutbox(dir, { kind: 'tell', target, message }); }
 function watch(dir, target, note) { return dropOutbox(dir, { kind: 'watch', target, note }); }
 function spawn(dir, repo, base, task) { return dropOutbox(dir, { kind: 'spawn', repo, base: base || null, task }); }
+function personality(dir) { return dropOutbox(dir, { kind: 'personality' }); }
 
-module.exports = { acquire, release, readLocks, readHolder, appendBoard, note, appendChat, tell, watch, spawn, dropOutbox, sleepSync };
+module.exports = { acquire, release, readLocks, readHolder, appendBoard, note, appendChat, tell, watch, spawn, personality, dropOutbox, sleepSync };

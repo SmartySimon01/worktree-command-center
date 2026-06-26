@@ -21,6 +21,9 @@ describe('parseOutboxMessage', () => {
     expect(parseOutboxMessage('{"kind":"spawn","repo":"app","task":"do X"}'))
       .toEqual({ kind: 'spawn', repo: 'app', base: null, task: 'do X' });
   });
+  it('parses a personality toggle (no fields)', () => {
+    expect(parseOutboxMessage('{"kind":"personality"}')).toEqual({ kind: 'personality' });
+  });
   it('rejects malformed / missing fields', () => {
     expect(parseOutboxMessage('not json')).toBeNull();
     expect(parseOutboxMessage('{"kind":"tell","target":"A"}')).toBeNull();

@@ -837,7 +837,12 @@
 .cos-term-tile { display:flex; flex-direction:column; height:280px; background:#0e0f17; border:1px solid var(--background-modifier-border); border-radius:8px; overflow:hidden; }
 .cos-term-head { display:flex; justify-content:space-between; align-items:center; padding:4px 8px; font-size:11px; color:var(--text-muted); background:var(--background-secondary); }
 .cos-term-head button { background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:13px; }
-.cos-term-body { flex:1; min-height:0; padding:4px; }
+.cos-term-body { flex:1; min-height:0; padding:4px; display:flex; flex-direction:column; }
+.cos-term-body > .xterm { flex:0 0 auto; }   /* keep the xterm's natural height; overflow (clipped) instead of shrinking */
+/* Satellites keep a readable min PTY (>= ~20 rows) that's often taller than their small box;
+   bottom-anchor their body so the NEWEST output shows (the top of the buffer clips off, not the
+   latest lines). The centered tile's xterm is fit to its body, so it stays top-anchored as before. */
+.cos-terminals-stage .cos-term-tile:not(.centered) .cos-term-body { justify-content:flex-end; overflow:hidden; }
 .cos-play-btn { margin-left:auto; background:#1f7a4d; color:#fff; border:none; border-radius:6px; padding:6px 14px; font-weight:600; cursor:pointer; }
 
 /* --- GOD overseer console: dock row holding the stage + the GOD panel --- */

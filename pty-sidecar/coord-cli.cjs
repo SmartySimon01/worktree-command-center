@@ -63,6 +63,12 @@ function main() {
     process.exit(0);
   }
 
+  if (cmd === 'personality') {
+    if (env('COS_ROLE') !== 'god') process.exit(0); // only Kane toggles his own personality
+    store.personality(dir);
+    process.exit(0);
+  }
+
   if (cmd === 'acquire') {
     const waitMs = Number(env('COS_COORD_WAIT_MS', String(core.WAIT_MS)));
     const ttlMs = flag(rest, '--ttl') ? Number(flag(rest, '--ttl')) * 1000 : core.CLI_TTL_MS;
@@ -78,7 +84,7 @@ function main() {
     process.exit(0);
   }
 
-  console.error('usage: cos-coord <status|acquire|release|note|chat|tell|watch|spawn> [resource] [--reason "…"] [--ttl <sec>] [--note "…"] [--base <branch>] [--task "…"]');
+  console.error('usage: cos-coord <status|acquire|release|note|chat|tell|watch|spawn|personality> [resource] [--reason "…"] [--ttl <sec>] [--note "…"] [--base <branch>] [--task "…"]');
   process.exit(0);
 }
 
