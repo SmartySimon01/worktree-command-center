@@ -19,6 +19,9 @@ import { slug as godSlug, formatFloorSnapshot, formatFloorIndex, parseOutboxMess
 import { looksLikeMenu, looksErrored } from './prompt-detect';
 import { looksLikePrompt } from './chat-room';
 import { classifyAttention, type AttentionItem } from './attention';
+import { JournalTile } from './journal-tile';
+import { JournalStore } from './journal-store';
+import type { StageTile } from './stage-tile';
 
 export interface RepoConfig { name: string; path: string; remote?: string; group?: string; }
 export interface RemoteTerminal { id: number; name: string; repo: string; branch: string; state: string; output: string; remoteOn: boolean; }
@@ -35,7 +38,7 @@ export interface GridDeps {
 	toast: (msg: string) => void;
 	promptForTopic: (title: string, placeholder: string, initial?: string, okLabel?: string) => Promise<string | null>;
 }
-interface SessionRecord { worktreePath: string; branch: string; repoName: string; repoPath: string; baseBranch: string; name?: string; hidden?: boolean; }
+interface SessionRecord { worktreePath: string; branch: string; repoName: string; repoPath: string; baseBranch: string; name?: string; hidden?: boolean; kind?: 'terminal' | 'journal'; journalSlug?: string; }
 
 // --- Kane personality mode (toggled by his /personality command) ---
 const KANE_PERSONA_ON =
@@ -59,8 +62,10 @@ export class TerminalsGrid {
 	private maxBtn: HTMLElement | null = null;
 	private controlsEl: HTMLElement | null = null;
 	private board: BoardView | null = null;
-	private tiles: TerminalTile[] = [];
-	private hidden: TerminalTile[] = [];
+	private tiles: StageTile[] = [];
+	private hidden: StageTile[] = [];
+	private journalStore!: JournalStore;
+	private journalSeq = 0;
 	private nextTileId = 1;
 	private pendingNewBranch: string | null = null;
 	private lastEntries: WorktreeEntry[] = [];
@@ -109,6 +114,7 @@ export class TerminalsGrid {
 		this.sessionsFile = deps.sessionsFile;
 		this.coordDir = deps.coordDir;
 		this.coordHookPath = deps.coordHookPath;
+		this.journalStore = new JournalStore(path.join(this.coordDir, 'journals'));
 	}
 
 	/** Mount the grid into a page container. Sessions PERSIST across mounts (tab switches):
@@ -161,8 +167,8 @@ export class TerminalsGrid {
 		const refreshBtn = controls.createEl('button', { text: '⟳ Refresh' });
 		refreshBtn.addEventListener('click', () => { void this.scanWorktrees().then(() => this.board?.refresh()); });
 
-		const search = controls.createEl('input', { cls: 'cos-search', attr: { type: 'text', placeholder: '🔍 filter terminals…', title: 'Dim terminals whose name / repo / branch don\'t match' } });
-		search.addEventListener('input', () => { this.searchQuery = search.value.trim().toLowerCase(); this.refreshSearch(); });
+		const journalBtn = controls.createEl('button', { text: '📓 Journal Entry', cls: 'cos-journal-btn', attr: { title: 'Open a new journal entry tile' } });
+		journalBtn.addEventListener('click', () => this.spawnJournal());
 
 		if (!this.board) this.board = new BoardView(
 			this.coordDir,
@@ -347,6 +353,35 @@ export class TerminalsGrid {
 		await this.spawnFromName(repoName, base, task);
 	}
 
+	/** Spawn a new journal tile, center it, and persist. */
+	private spawnJournal(): void {
+		const tile = new JournalTile({
+			tileId: this.nextTileId++,
+			name: `Journal ${++this.journalSeq}`,
+			store: this.journalStore,
+			toast: this.deps.toast,
+			onClosed: (t) => {
+				const wasCentered = this.centeredId === t.tileId;
+				const r = rqClose(this.q, t.tileId, wasCentered); this.q = r.state;
+				this.tiles = this.tiles.filter((x) => x !== t); t.kill(); void this.persist();
+				if (r.center !== null) this.doCenter(r.center);
+				else { if (wasCentered) this.centeredId = null; this.applyLayout(); }
+			},
+			onHide: (t) => this.hideTile(t),
+			onLock: (t) => this.toggleLockById(t.tileId),
+			onCenter: (t) => this.handleClick(t.tileId),
+			onRequestRename: (t, cur) => {
+				void this.deps.promptForTopic('Rename journal', 'New name', cur, 'Rename')
+					.then((name) => { if (name && name.trim()) { t.setName(name.trim()); void this.persist(); } });
+			},
+			onRename: () => { void this.persist(); },
+		});
+		if (this.stageEl) tile.render(this.stageEl);
+		this.tiles.push(tile);
+		this.doCenter(tile.tileId);
+		void this.persist();
+	}
+
 	/** Open the repo selected in the dropdown in a VS Code window. */
 	private openInVSCode(): void {
 		const repo = this.selectedRepo();
@@ -390,7 +425,7 @@ export class TerminalsGrid {
 	private openChat(): void {
 		const selected = this.tiles.filter((t) => t.isSelected);
 		if (selected.length < 2) { this.deps.toast('Select at least 2 terminals first'); return; }
-		const members = selected.map((t) => ({
+		const members = (selected as TerminalTile[]).map((t) => ({
 			name: t.name,
 			sendLine: (s: string) => t.sendLine(s),
 			sendKeys: (s: string) => t.sendKeys(s),
@@ -427,7 +462,7 @@ export class TerminalsGrid {
 	}
 
 	/** Every live session GOD should see / be able to message (foreground + hidden background). */
-	private allSessions(): TerminalTile[] { return [...this.tiles, ...this.hidden]; }
+	private allSessions(): StageTile[] { return [...this.tiles, ...this.hidden]; }
 
 	/** Number of live terminals (foreground + hidden) — for the close-workspace confirm. */
 	terminalCount(): number { return this.tiles.length + this.hidden.length; }
@@ -446,7 +481,7 @@ export class TerminalsGrid {
 		if (this.tiles.some((t) => t.tileId === id)) { this.doCenter(id); this.focusCentered(); }
 	}
 
-	private tileState(t: TerminalTile): string {
+	private tileState(t: StageTile): string {
 		const o = t.recentOutput();
 		if (looksLikePrompt(o)) return 'prompt';
 		if (looksLikeMenu(o)) return 'menu';
@@ -456,7 +491,7 @@ export class TerminalsGrid {
 
 	/** Floor snapshot for the phone view: every session (+ Kane) with state + recent output. */
 	floorState(): RemoteTerminal[] {
-		const out: RemoteTerminal[] = this.allSessions().map((t) => ({
+		const out: RemoteTerminal[] = (this.allSessions().filter((t) => !t.isJournal) as TerminalTile[]).map((t) => ({
 			id: t.tileId, name: t.name, repo: this.repoNameFor(t), branch: t.branch,
 			state: this.tileState(t), output: t.recentOutput().split('\n').slice(-12).join('\n'), remoteOn: t.isRemoteOn,
 		}));
@@ -474,7 +509,10 @@ export class TerminalsGrid {
 	repoNames(): string[] { return this.repos.map((r) => r.name); }
 
 	/** Toggle remote-control on a terminal by id (from the phone). */
-	toggleRemoteById(id: number): void { this.allSessions().find((t) => t.tileId === id)?.toggleRemoteControl(); }
+	toggleRemoteById(id: number): void {
+		const t = this.allSessions().find((x) => x.tileId === id);
+		if (t && !t.isJournal) (t as TerminalTile).toggleRemoteControl();
+	}
 
 	/** Spawn a worktree terminal for a repo by name, on a base, with a kickoff task. */
 	async spawnFromName(repoName: string, base: string | null, task: string): Promise<TerminalTile | null> {
@@ -551,11 +589,13 @@ export class TerminalsGrid {
 			const sessions = this.allSessions();
 			const live = new Set<string>(['INDEX.md']);
 			for (const t of sessions) {
-				const fname = `${t.tileId}-${godSlug(t.name)}.md`;
+				if (t.isJournal) continue; // journals have no worktree snapshot
+				const tt = t as TerminalTile;
+				const fname = `${tt.tileId}-${godSlug(tt.name)}.md`;
 				live.add(fname);
 				const body = formatFloorSnapshot(
-					{ name: t.name, repo: this.repoNameFor(t), branch: t.branch, worktreePath: t.worktreePath, ts: now },
-					t.recentOutput(),
+					{ name: tt.name, repo: this.repoNameFor(tt), branch: tt.branch, worktreePath: tt.worktreePath, ts: now },
+					tt.recentOutput(),
 				);
 				fsSync.writeFileSync(path.join(dir, fname), body, 'utf8');
 			}
@@ -566,8 +606,9 @@ export class TerminalsGrid {
 	}
 
 	/** The repo name a session belongs to (matches the scan/registry mapping). */
-	private repoNameFor(t: TerminalTile): string {
-		const e = this.lastEntries.find((x) => path.resolve(x.path) === path.resolve(t.worktreePath));
+	private repoNameFor(t: StageTile): string {
+		if (t.isJournal) return 'journal';
+		const e = this.lastEntries.find((x) => path.resolve(x.path) === path.resolve((t as TerminalTile).worktreePath));
 		return e ? e.repo : '?';
 	}
 
@@ -596,7 +637,7 @@ export class TerminalsGrid {
 		if (msg.kind === 'tell') {
 			const name = resolveTellTarget(msg.target, liveNames);
 			const tile = name ? this.allSessions().find((t) => t.name === name) : undefined;
-			if (tile) tile.sendLine(msg.message);
+			if (tile && !tile.isJournal) (tile as TerminalTile).sendLine(msg.message);
 			else this.writeGodInbox(`could not deliver to "${msg.target}" — not a live terminal. Live: ${liveNames.join(', ') || '(none)'}`);
 		} else if (msg.kind === 'watch') {
 			const name = resolveTellTarget(msg.target, liveNames);
@@ -729,7 +770,7 @@ export class TerminalsGrid {
 	}
 
 	/** The tile currently in the center (if any). */
-	private centeredTile(): TerminalTile | undefined {
+	private centeredTile(): StageTile | undefined {
 		return this.centeredId === null ? undefined : this.tiles.find((t) => t.tileId === this.centeredId);
 	}
 
@@ -738,7 +779,8 @@ export class TerminalsGrid {
 	 *  Anything still streaming output is `thinking` and never grabs the center on its own.
 	 *  (`errored` is gated behind idle so a streaming tile that merely prints the word "error"
 	 *  can't steal focus.) */
-	private spotlightState(t: TerminalTile): SpotlightState {
+	private spotlightState(t: StageTile): SpotlightState {
+		if (t.isJournal) return 'thinking'; // journals never auto-grab the spotlight; centered only on click
 		const o = t.recentOutput();
 		if (looksLikePrompt(o)) return 'prompt';
 		if (looksLikeMenu(o)) return 'menu';
@@ -804,7 +846,7 @@ export class TerminalsGrid {
 
 	/** Hide a tile: pull it off the stage but keep its session + worktree alive.
 	 *  Resurface later with showTile() from the Coordination panel. */
-	private hideTile(tile: TerminalTile): void {
+	private hideTile(tile: StageTile): void {
 		if (!this.tiles.includes(tile)) return;
 		if (this.lockedTileId === tile.tileId) { this.lockedTileId = null; tile.setLocked(false); }
 		const wasCentered = this.centeredId === tile.tileId;
@@ -850,7 +892,8 @@ export class TerminalsGrid {
 		this.hidden = this.hidden.filter((t) => t !== tile);
 		this.idleTiles.delete(tile.tileId);
 		if (this.lockedTileId === tile.tileId) this.lockedTileId = null;
-		await tile.close(); // kill + removeWorktreeAndBranch + fires onClosed
+		if (tile.isJournal) { tile.kill(); }
+		else { await (tile as TerminalTile).close(); } // kill + removeWorktreeAndBranch + fires onClosed
 		void this.persist();
 		this.board?.refresh();
 	}
@@ -890,9 +933,15 @@ export class TerminalsGrid {
 	/** Persist THIS group's currently-open sessions (called on play + on close). */
 	private async persist(): Promise<void> {
 		const all = await this.readAllSessions();
+		const serializeTile = (t: StageTile, hidden: boolean): SessionRecord => {
+			if (t.isJournal) {
+				return { kind: 'journal', name: t.name, journalSlug: (t as JournalTile).journalSlug, hidden, worktreePath: '', branch: '', repoName: 'journal', repoPath: '', baseBranch: '' };
+			}
+			return { kind: 'terminal', ...(t as TerminalTile).sessionRecord(), hidden };
+		};
 		all[this.deps.group] = [
-			...this.tiles.map((t) => ({ ...t.sessionRecord(), hidden: false })),
-			...this.hidden.map((t) => ({ ...t.sessionRecord(), hidden: true })),
+			...this.tiles.map((t) => serializeTile(t, false)),
+			...this.hidden.map((t) => serializeTile(t, true)),
 		];
 		try { await fs.writeFile(this.sessionsFile, JSON.stringify(all, null, 2), 'utf8'); } catch { /* best effort */ }
 	}
@@ -903,6 +952,21 @@ export class TerminalsGrid {
 		const recs = all[this.deps.group] ?? [];
 		const { visible, hidden } = partitionByHidden(recs);
 		for (const rec of [...visible, ...hidden]) {
+			if (rec.kind === 'journal') {
+				const doc = rec.journalSlug ? this.journalStore.load(rec.journalSlug) : null;
+				const tile = new JournalTile({
+					tileId: this.nextTileId++, name: rec.name ?? 'Journal', store: this.journalStore,
+					slug: rec.journalSlug, initialText: doc?.text ?? '', toast: this.deps.toast,
+					onClosed: (t) => { const wc = this.centeredId === t.tileId; const r = rqClose(this.q, t.tileId, wc); this.q = r.state; this.tiles = this.tiles.filter((x) => x !== t); t.kill(); void this.persist(); if (r.center !== null) this.doCenter(r.center); else { if (wc) this.centeredId = null; this.applyLayout(); } },
+					onHide: (t) => this.hideTile(t), onLock: (t) => this.toggleLockById(t.tileId),
+					onCenter: (t) => this.handleClick(t.tileId),
+					onRequestRename: (t, cur) => { void this.deps.promptForTopic('Rename journal', 'New name', cur, 'Rename').then((n) => { if (n && n.trim()) { t.setName(n.trim()); void this.persist(); } }); },
+					onRename: () => { void this.persist(); },
+				});
+				if (this.stageEl) tile.render(this.stageEl);
+				if (rec.hidden) { tile.setHidden(true); this.hidden.push(tile); } else { this.tiles.push(tile); }
+				continue; // skip the terminal path for this record
+			}
 			let exists = false;
 			try { await fs.access(rec.worktreePath); exists = true; } catch { exists = false; }
 			if (!exists) continue;
@@ -937,11 +1001,13 @@ export class TerminalsGrid {
 	public async parkAll(): Promise<void> {
 		const iso = new Date().toISOString();
 		for (const t of [...this.tiles, ...this.hidden]) {
+			if (t.isJournal) continue; // journals have no worktree to park
+			const tt = t as TerminalTile;
 			try {
-				const action = await parkWorktree(t.worktreePath, iso);
+				const action = await parkWorktree(tt.worktreePath, iso);
 				if (action === 'parked') {
 					await fs.appendFile(path.join(this.coordDir, 'board.md'),
-						`${Date.now()}\t${t.name}\t-\tNOTE\tauto-parked on teardown\n`, 'utf8').catch(() => {});
+						`${Date.now()}\t${tt.name}\t-\tNOTE\tauto-parked on teardown\n`, 'utf8').catch(() => {});
 				}
 			} catch { /* never block teardown */ }
 		}
@@ -960,7 +1026,7 @@ export class TerminalsGrid {
 			for (const wt of parseWorktreeList(wl.stdout)) {
 				if (path.resolve(wt.path) === path.resolve(repo.path)) continue; // skip the primary checkout
 				const status = await runCommand('git', ['status', '--porcelain'], { cwd: wt.path, timeoutMs: 8000 });
-				const tile = [...this.tiles, ...this.hidden].find((t) => path.resolve(t.worktreePath) === path.resolve(wt.path));
+				const tile = ([...this.tiles, ...this.hidden].filter((t) => !t.isJournal) as TerminalTile[]).find((t) => path.resolve(t.worktreePath) === path.resolve(wt.path));
 				const baseRef = tile ? tile.baseBranch : this.baseOf(wt.branch);
 				const ab = await runCommand('git', ['rev-list', '--left-right', '--count', `${baseRef}...HEAD`], { cwd: wt.path, timeoutMs: 8000 });
 				const subj = await runCommand('git', ['log', '-1', '--pretty=%s'], { cwd: wt.path, timeoutMs: 8000 });
@@ -996,7 +1062,7 @@ export class TerminalsGrid {
 		const repo = this.repos.find((r) => r.name === entry.repo);
 		if (!repo) return;
 		// Skip if a tile is already attached to this worktree.
-		if (this.tiles.some((t) => path.resolve(t.worktreePath) === path.resolve(entry.path))) return;
+		if (this.tiles.some((t) => !t.isJournal && path.resolve((t as TerminalTile).worktreePath) === path.resolve(entry.path))) return;
 		await reopenWorktree(repo.path, entry.path, branch);
 		try { await writeReadyHook(entry.path, this.notifyScriptPath, this.coordHookPath); } catch { /* best effort */ }
 		const tile = this.makeTile({ worktreePath: entry.path, branch }, repo.name, repo.path, this.baseOf(branch), false);
