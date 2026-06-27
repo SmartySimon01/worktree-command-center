@@ -102,6 +102,9 @@ export class GodConsole {
 				this.pasteFromClipboard();
 			}
 		});
+		// Paste is owned solely by our handlers (Ctrl+V keydown + the right-click above). Swallow
+		// xterm's native paste in the capture phase so a right-click doesn't paste twice.
+		this.bodyEl.addEventListener('paste', (e) => { e.preventDefault(); e.stopImmediatePropagation(); }, true);
 		this.fitThrottle = new FitThrottle({
 			// Kane lives in a fixed-width dock (never bubbles), so fit it to its actual size —
 			// no minimum clamp (clamping would clip his own readable content).

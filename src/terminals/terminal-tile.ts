@@ -154,6 +154,10 @@ export class TerminalTile implements StageTile {
 				this.pasteFromClipboard();
 			}
 		});
+		// Paste is owned solely by our handlers (Ctrl+V keydown + the right-click above). Swallow
+		// xterm's native paste in the capture phase so a right-click doesn't paste TWICE: the Ctrl+V
+		// keydown path already preventDefaults the native paste; right-click did not, hence the double.
+		body.addEventListener('paste', (e) => { e.preventDefault(); e.stopImmediatePropagation(); }, true);
 		this.fitThrottle = new FitThrottle({
 			// Only resize the PTY when this tile is CENTERED. Resizing on every bubble/center makes
 			// ConPTY re-emit the screen (xterm appends it → the same message duplicated N times).
