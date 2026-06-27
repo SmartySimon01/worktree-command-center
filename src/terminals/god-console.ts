@@ -121,8 +121,9 @@ export class GodConsole {
 	}
 
 	/** Build args/env, create Kane's session bridge, wire it, and start it. Called from render()
-	 *  and from refresh() (resume=true → claude --continue, resuming Kane's conversation). */
-	private startSession(resume: boolean): void {
+	 *  and from refresh(). resume → claude --continue; fallbackFresh → if --continue finds no
+	 *  conversation, relaunch a FRESH session in place (so ⟳ revives a dead Kane). */
+	private startSession(resume: boolean, fallbackFresh = false): void {
 		const ctxFile = this.writeSystemPromptFile();
 		this.writeKaneCommands();
 		const args: string[] = resume ? ['--continue'] : [];
@@ -136,9 +137,17 @@ export class GodConsole {
 			PATH: sidecarDir + path.delimiter + (process.env.PATH ?? ''),
 		};
 		fs.mkdirSync(this.opts.godHomeDir, { recursive: true });
+		let probe = ''; // first bytes only (capped) — detect the --continue "no conversation" exit
 		this.bridge = new SessionBridge(this.opts.sidecarPath, this.opts.godHomeDir, 'claude', args, env);
-		this.bridge.onData((d) => { this.term?.write(d); this.markBusy(); });
-		this.bridge.onExit((code) => this.term?.write(`\r\n[Kane session ended (code ${code ?? '?'})]\r\n`));
+		this.bridge.onData((d) => { if (fallbackFresh && probe.length < 2048) probe += d; this.term?.write(d); this.markBusy(); });
+		this.bridge.onExit((code) => {
+			if (fallbackFresh && /no conversation found to continue/i.test(probe)) {
+				this.term?.reset();          // --continue had nothing to resume → start fresh in place
+				this.startSession(false);
+				return;
+			}
+			this.term?.write(`\r\n[Kane session ended (code ${code ?? '?'})]\r\n`);
+		});
 		this.bridge.start();
 	}
 
@@ -161,7 +170,7 @@ export class GodConsole {
 		this.busy = false;
 		this.bridge?.kill();
 		this.term?.reset();
-		this.startSession(true);
+		this.startSession(true, true); // ⟳: try --continue; if no conversation, fall back to a fresh session
 	}
 
 	/** Show/hide the panel WITHOUT killing the session. Refits on show. */

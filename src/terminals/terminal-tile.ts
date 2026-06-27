@@ -445,9 +445,11 @@ export class TerminalTile implements StageTile {
 		this.opts.onClosed(this);
 	}
 
-	/** Build args/env, create the session bridge, wire it, and start it. Called once from the
-	 *  constructor and again by refresh() (resume=true → claude --continue). */
-	private startSession(resume: boolean): void {
+	/** Build args/env, create the session bridge, wire it, and start it. Called from the
+	 *  constructor and from refresh(). resume → claude --continue; fallbackFresh → if that
+	 *  --continue finds no conversation (transcript gone), relaunch a FRESH session in place,
+	 *  so ⟳ can revive a terminal that says "No conversation found to continue". */
+	private startSession(resume: boolean, fallbackFresh = false): void {
 		const args = resume ? ['--continue'] : [];
 		if (this.opts.bypassPermissions) args.push('--dangerously-skip-permissions');
 		const ctxFile = this.writeContextFile();
@@ -459,9 +461,17 @@ export class TerminalTile implements StageTile {
 			COS_TERMINAL_NAME: this.displayName,
 			PATH: sidecarDir + path.delimiter + (process.env.PATH ?? ''),
 		};
+		let probe = ''; // first bytes only (capped) — used to detect the --continue "no conversation" exit
 		this.bridge = new SessionBridge(this.opts.sidecarPath, this.opts.worktree.worktreePath, 'claude', args, env);
-		this.bridge.onData((d) => this.term?.write(d));
-		this.bridge.onExit((code) => this.term?.write(`\r\n[session ended (code ${code ?? '?'})]\r\n`));
+		this.bridge.onData((d) => { if (fallbackFresh && probe.length < 2048) probe += d; this.term?.write(d); });
+		this.bridge.onExit((code) => {
+			if (fallbackFresh && /no conversation found to continue/i.test(probe)) {
+				this.term?.reset();          // --continue had nothing to resume → start fresh in place
+				this.startSession(false);
+				return;
+			}
+			this.term?.write(`\r\n[session ended (code ${code ?? '?'})]\r\n`);
+		});
 		this.bridge.onReady(() => { this.idle = true; this.opts.onReady?.(this); });
 		this.bridge.start();
 	}
@@ -481,6 +491,6 @@ export class TerminalTile implements StageTile {
 		this.bridge?.kill();
 		this.term?.reset();
 		this.idle = false;
-		this.startSession(true);
+		this.startSession(true, true); // ⟳: try --continue; if no conversation, fall back to a fresh session
 	}
 }
