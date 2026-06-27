@@ -1,6 +1,8 @@
 import { JournalStore } from './journal-store';
 import { promptForConfirm } from '../ui/prompt-dialog';
 import type { StageTile } from './stage-tile';
+import { openExternalUrl } from './links';
+import type { ProposedIssue, CreatedIssue } from './linear-convert-probe';
 
 export interface JournalTileOpts {
   tileId: number;
@@ -16,6 +18,8 @@ export interface JournalTileOpts {
   onRename: () => void;
   toast: (msg: string) => void;
   onFormat: (text: string) => Promise<string>;
+  onConvertPropose: (text: string) => Promise<ProposedIssue[]>;
+  onConvertCreate: (issues: ProposedIssue[]) => Promise<CreatedIssue[]>;
 }
 
 /** A stage tile holding free-form notes (a textarea), not a Claude session. Saves to the
@@ -39,6 +43,7 @@ export class JournalTile implements StageTile {
   private fmtBtn: HTMLButtonElement | null = null;
   private saveBtn: HTMLButtonElement | null = null;
   private historyBtn: HTMLButtonElement | null = null;
+  private convertBtn: HTMLButtonElement | null = null;
 
   constructor(private opts: JournalTileOpts) {
     this.displayName = opts.name;
@@ -74,7 +79,8 @@ export class JournalTile implements StageTile {
     this.historyBtn.addEventListener('click', (e) => { e.stopPropagation(); this.toggleHistory(); });
     this.fmtBtn = actions.createEl('button', { text: 'Format', cls: 'cos-journal-fmt', attr: { title: 'Reformat with Claude — fixes indentation, keeps your words' } }) as HTMLButtonElement;
     this.fmtBtn.addEventListener('click', (e) => { e.stopPropagation(); void this.format(); });
-    actions.createEl('button', { text: 'Convert to Linear', cls: 'cos-journal-soon', attr: { disabled: 'true', title: 'Coming soon (phase 3)' } });
+    this.convertBtn = actions.createEl('button', { text: 'Convert to Linear', cls: 'cos-journal-convert-btn', attr: { title: 'Propose Linear issues from this note' } }) as HTMLButtonElement;
+    this.convertBtn.addEventListener('click', (e) => { e.stopPropagation(); void this.convertToLinear(); });
   }
 
   private renderEditor(): void {
@@ -141,7 +147,7 @@ export class JournalTile implements StageTile {
   }
 
   private setFooterDisabled(on: boolean): void {
-    for (const b of [this.saveBtn, this.historyBtn, this.fmtBtn]) if (b) b.disabled = on;
+    for (const b of [this.saveBtn, this.historyBtn, this.fmtBtn, this.convertBtn]) if (b) b.disabled = on;
   }
 
   private async format(): Promise<void> {
@@ -172,6 +178,75 @@ export class JournalTile implements StageTile {
     bar.createEl('button', { text: 'Apply', cls: 'cos-journal-save' })
       .addEventListener('click', (e) => { e.stopPropagation(); this.currentText = after; this.dirty = true; this.setFooterDisabled(false); this.renderEditor(); });
     bar.createEl('button', { text: 'Discard' })
+      .addEventListener('click', (e) => { e.stopPropagation(); this.setFooterDisabled(false); this.renderEditor(); });
+  }
+
+  private async convertToLinear(): Promise<void> {
+    const text = this.textarea?.value ?? this.currentText;
+    if (text.trim() === '') { this.opts.toast('Nothing to convert'); return; }
+    this.currentText = text;
+    this.setFooterDisabled(true);
+    if (this.bodyEl) { this.bodyEl.empty(); this.bodyEl.createDiv({ cls: 'cos-journal-formatting', text: 'Analyzing note…' }); }
+    let proposed: ProposedIssue[];
+    try { proposed = await this.opts.onConvertPropose(text); }
+    catch { this.opts.toast('Convert failed'); this.renderEditor(); this.setFooterDisabled(false); return; }
+    if (!proposed.length) { this.opts.toast("Couldn't read a proposed split"); this.renderEditor(); this.setFooterDisabled(false); return; }
+    this.renderConvertPreview(proposed);
+  }
+
+  private renderConvertPreview(proposed: ProposedIssue[]): void {
+    if (!this.bodyEl) return;
+    this.bodyEl.empty();
+    const checked = proposed.map(() => true);
+    const list = this.bodyEl.createDiv({ cls: 'cos-journal-convert' });
+    proposed.forEach((iss, i) => {
+      const row = list.createDiv({ cls: 'cos-journal-convert-row' });
+      const cb = row.createEl('input', { attr: { type: 'checkbox' } }) as HTMLInputElement;
+      cb.checked = true;
+      const txt = row.createDiv({ cls: 'cos-journal-convert-txt' });
+      txt.createDiv({ cls: 'cos-journal-convert-title', text: iss.title });
+      txt.createDiv({ cls: 'cos-journal-convert-desc', text: iss.description });
+      cb.addEventListener('change', () => { checked[i] = cb.checked; updateBtn(); });
+    });
+    const bar = this.bodyEl.createDiv({ cls: 'cos-journal-preview-actions' });
+    const createBtn = bar.createEl('button', { cls: 'cos-journal-save' }) as HTMLButtonElement;
+    const updateBtn = (): void => {
+      const n = checked.filter(Boolean).length;
+      createBtn.setText(`Create ${n} issue${n === 1 ? '' : 's'}`);
+      createBtn.disabled = n === 0;
+    };
+    updateBtn();
+    createBtn.addEventListener('click', (e) => { e.stopPropagation(); void this.doCreate(proposed.filter((_, i) => checked[i])); });
+    bar.createEl('button', { text: 'Discard' })
+      .addEventListener('click', (e) => { e.stopPropagation(); this.setFooterDisabled(false); this.renderEditor(); });
+  }
+
+  private async doCreate(issues: ProposedIssue[]): Promise<void> {
+    if (this.bodyEl) { this.bodyEl.empty(); this.bodyEl.createDiv({ cls: 'cos-journal-formatting', text: 'Creating in Linear…' }); }
+    let results: CreatedIssue[];
+    try { results = await this.opts.onConvertCreate(issues); }
+    catch { this.opts.toast('Create timed out — check Linear'); this.renderEditor(); this.setFooterDisabled(false); return; }
+    this.renderConvertResult(results);
+  }
+
+  private renderConvertResult(results: CreatedIssue[]): void {
+    if (!this.bodyEl) return;
+    this.bodyEl.empty();
+    const list = this.bodyEl.createDiv({ cls: 'cos-journal-convert' });
+    if (!results.length) list.createDiv({ cls: 'cos-journal-hist-empty', text: 'No issues created' });
+    for (const r of results) {
+      const row = list.createDiv({ cls: 'cos-journal-convert-row' });
+      row.createSpan({ cls: 'cos-journal-convert-mark', text: r.ok ? '✓' : '✗' });
+      if (r.ok && r.url) {
+        const a = row.createEl('a', { cls: 'cos-journal-convert-link', text: r.title, attr: { href: r.url } });
+        a.addEventListener('click', (e) => { e.preventDefault(); openExternalUrl(r.url!); });
+      } else {
+        row.createSpan({ cls: 'cos-journal-convert-title', text: r.title });
+        if (r.error) row.createSpan({ cls: 'cos-journal-convert-desc', text: r.error });
+      }
+    }
+    const bar = this.bodyEl.createDiv({ cls: 'cos-journal-preview-actions' });
+    bar.createEl('button', { text: 'Done', cls: 'cos-journal-save' })
       .addEventListener('click', (e) => { e.stopPropagation(); this.setFooterDisabled(false); this.renderEditor(); });
   }
 
