@@ -31,7 +31,11 @@ export function runCommand(
 	return new Promise((resolve) => {
 		let proc;
 		try {
-			proc = spawn(exe, args, { cwd: opts.cwd, windowsHide: true });
+			proc = spawn(exe, args, {
+				cwd: opts.cwd,
+				windowsHide: true,
+				...(process.platform !== 'win32' ? { detached: true } : {}),
+			});
 		} catch (err) {
 			resolve({ stdout: '', stderr: '', code: null, timedOut: false, error: (err as Error).message });
 			return;

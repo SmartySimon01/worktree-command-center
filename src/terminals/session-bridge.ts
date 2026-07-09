@@ -49,6 +49,7 @@ export class SessionBridge {
 		this.proc = spawn(node, [this.sidecarPath, this.cwd, this.command, ...this.args], {
 			windowsHide: true,
 			env: { ...process.env, ...this.extraEnv },
+			...(process.platform !== 'win32' ? { detached: true } : {}),
 		});
 		this.proc.stdout?.on('data', (d) => this.handleRx(d.toString('utf8')));
 		this.proc.stderr?.on('data', () => { /* sidecar logs nothing to stderr normally */ });

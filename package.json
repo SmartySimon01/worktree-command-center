@@ -10,7 +10,8 @@
     "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs",
     "start": "npm run build && electron .",
     "test": "vitest run",
-    "dist": "npm run build && electron-builder --win"
+    "dist": "npm run build && electron-builder --win",
+    "dist:mac": "npm run build && electron-builder --mac"
   },
   "devDependencies": {
     "@types/node": "^20.19.41",
@@ -37,6 +38,18 @@
       "installerIcon": "assets/icon.ico",
       "uninstallerIcon": "assets/icon.ico",
       "shortcutName": "Worktree Command Center"
-    }
+    },
+    "mac": {
+      "target": ["dmg", "zip"],
+      "arch": ["x64", "arm64"],
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.developer-tools"
+    },
+    "extraResources": [
+      {
+        "from": "pty-sidecar",
+        "to": "pty-sidecar"
+      }
+    ]
   }
 }
