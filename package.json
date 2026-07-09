@@ -30,6 +30,9 @@
   "build": {
     "appId": "com.ronaldfridlyand.worktree-command-center",
     "productName": "Worktree Command Center",
+    "directories": {
+      "output": "release"
+    },
     "win": {
       "icon": "assets/icon.ico",
       "target": "nsis"
@@ -40,8 +43,10 @@
       "shortcutName": "Worktree Command Center"
     },
     "mac": {
-      "target": ["dmg", "zip"],
-      "arch": ["x64", "arm64"],
+      "target": [
+        { "target": "dmg", "arch": ["x64", "arm64"] },
+        { "target": "zip", "arch": ["x64", "arm64"] }
+      ],
       "icon": "assets/icon.icns",
       "category": "public.app-category.developer-tools"
     },
