@@ -3,12 +3,21 @@ import { stripAnsi } from './usage-parse';
 import * as fs from 'fs';
 import * as path from 'path';
 
-export interface LinearConvertProbeOpts { sidecarPath: string; cwd: string; }
+export interface LinearConvertProbeOpts { sidecarPath: string; cwd: string; linear?: LinearConvertConfig; }
 export interface ProposedIssue { title: string; description: string; }
 export interface CreatedIssue { title: string; url?: string; ok: boolean; error?: string; }
 
-const CJB_TEAM = 'CJBrothers';
-const CJB_TEAM_ID = '0c1d60eb-eb84-4cd2-8a8c-d7b0926b28d5';
+export interface LinearConvertConfig { team: string; teamId: string; saveIssueTool: string; }
+
+/** Validate cfg.linearConvert from config.json: three non-empty strings or undefined. */
+export function parseLinearConvertConfig(v: unknown): LinearConvertConfig | undefined {
+  if (!v || typeof v !== 'object') return undefined;
+  const o = v as Record<string, unknown>;
+  const ok = (x: unknown): x is string => typeof x === 'string' && x.trim() !== '';
+  return ok(o.team) && ok(o.teamId) && ok(o.saveIssueTool)
+    ? { team: o.team, teamId: o.teamId, saveIssueTool: o.saveIssueTool }
+    : undefined;
+}
 
 export function buildProposePrompt(notePath: string): string {
   return (
@@ -19,10 +28,10 @@ export function buildProposePrompt(notePath: string): string {
   );
 }
 
-export function buildCreatePrompt(issuesPath: string): string {
+export function buildCreatePrompt(issuesPath: string, team: string, teamId: string): string {
   return (
     `Read the JSON array of issues at ${issuesPath}. For EACH issue, create a Linear issue in the ` +
-    `"${CJB_TEAM}" team (id ${CJB_TEAM_ID}) using the available Linear tool, with its title and ` +
+    `"${team}" team (id ${teamId}) using the available Linear tool, with its title and ` +
     'description. Output ONLY a JSON array with one object per issue: {"title": string, "url": ' +
     'string, "ok": true} on success, or {"title": string, "ok": false, "error": string} on ' +
     'failure. No preamble, no explanation, no code fences.'
@@ -75,7 +84,9 @@ export class LinearConvertProbe {
 
   async create(issues: ProposedIssue[]): Promise<CreatedIssue[]> {
     if (!issues.length) return [];
-    const rows = await this.run(JSON.stringify(issues), buildCreatePrompt, 'mcp__linear-cjb__save_issue', 120000);
+    const linear = this.opts.linear;
+    if (!linear) throw new Error('linear convert not configured');
+    const rows = await this.run(JSON.stringify(issues), (p) => buildCreatePrompt(p, linear.team, linear.teamId), linear.saveIssueTool, 120000);
     return rows
       .filter((r): r is Record<string, unknown> => !!r && typeof (r as Record<string, unknown>).title === 'string')
       .map((r) => ({

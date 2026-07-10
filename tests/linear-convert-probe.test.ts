@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildProposePrompt, buildCreatePrompt, parseIssuesJson } from '../src/terminals/linear-convert-probe';
+import { buildProposePrompt, buildCreatePrompt, parseIssuesJson, parseLinearConvertConfig, LinearConvertProbe } from '../src/terminals/linear-convert-probe';
 
 describe('buildProposePrompt', () => {
   it('references the note path and asks for a JSON array', () => {
@@ -9,11 +9,33 @@ describe('buildProposePrompt', () => {
   });
 });
 describe('buildCreatePrompt', () => {
-  it('references the issues path, the CJBrothers team, and its id', () => {
-    const p = buildCreatePrompt('/tmp/i.json');
+  it('references the issues path, the team name, and the team id', () => {
+    const p = buildCreatePrompt('/tmp/i.json', 'Acme', 'team-uuid-123');
     expect(p).toContain('/tmp/i.json');
-    expect(p).toContain('CJBrothers');
-    expect(p).toContain('0c1d60eb-eb84-4cd2-8a8c-d7b0926b28d5');
+    expect(p).toContain('Acme');
+    expect(p).toContain('team-uuid-123');
+  });
+});
+describe('parseLinearConvertConfig', () => {
+  it('accepts a complete config', () => {
+    expect(parseLinearConvertConfig({ team: 'Acme', teamId: 'uuid-1', saveIssueTool: 'mcp__linear__save_issue' }))
+      .toEqual({ team: 'Acme', teamId: 'uuid-1', saveIssueTool: 'mcp__linear__save_issue' });
+  });
+  it('rejects non-objects and missing or empty fields', () => {
+    expect(parseLinearConvertConfig(undefined)).toBeUndefined();
+    expect(parseLinearConvertConfig('Acme')).toBeUndefined();
+    expect(parseLinearConvertConfig({ team: 'Acme' })).toBeUndefined();
+    expect(parseLinearConvertConfig({ team: '', teamId: 'x', saveIssueTool: 'y' })).toBeUndefined();
+  });
+});
+describe('LinearConvertProbe.create without config', () => {
+  it('rejects when issues are non-empty and no linear config was given', async () => {
+    const probe = new LinearConvertProbe({ sidecarPath: 'sidecar.cjs', cwd: '.' });
+    await expect(probe.create([{ title: 't', description: 'd' }])).rejects.toThrow('not configured');
+  });
+  it('resolves [] for an empty issue list even without config', async () => {
+    const probe = new LinearConvertProbe({ sidecarPath: 'sidecar.cjs', cwd: '.' });
+    await expect(probe.create([])).resolves.toEqual([]);
   });
 });
 describe('parseIssuesJson', () => {
