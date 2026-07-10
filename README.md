@@ -5,7 +5,7 @@ Run many **Claude Code** sessions in parallel — each isolated in its own git
 Sessions coordinate through shared locks + a live board so they don't step on each
 other, auto-save unfinished work, and can talk to each other (and you) in a group chat.
 
-A standalone desktop app (Electron). Windows-first.
+A standalone desktop app (Electron). Originally Windows-first; this fork adds macOS support.
 
 > **Status:** early / in development.
 
@@ -24,9 +24,40 @@ npm install
 npm start          # build + launch
 npm test           # unit tests
 npm run dist       # build a Windows installer (release/)
+npm run dist:mac   # build a macOS dmg + zip, both x64 and arm64 (release/)
 ```
 
-Requires Node 18+ and Git on PATH. Claude Code (`claude`) must be installed and on PATH.
+Requires Node 20.19+ or 22.12+ (the test toolchain's native bindings need it) and Git on PATH.
+Claude Code (`claude`) must be installed and on PATH.
+
+### macOS code signing
+
+`npm run dist:mac` builds unsigned by default, which is fine to run locally (no
+Gatekeeper prompt for apps built directly on your own machine) but shows an
+"unidentified developer" warning if the dmg is copied elsewhere. To sign with your
+own local identity instead of a paid Apple Developer ID:
+
+```bash
+# one-time: create + trust a self-signed code-signing cert in your login keychain
+openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 3650 -nodes \
+  -subj "/CN=Worktree Command Center Dev" \
+  -addext "extendedKeyUsage=critical,codeSigning" \
+  -addext "keyUsage=critical,digitalSignature" \
+  -addext "basicConstraints=critical,CA:false"
+openssl pkcs12 -export -out cert.p12 -inkey key.pem -in cert.pem -password pass:changeit
+security import cert.p12 -k ~/Library/Keychains/login.keychain-db -P changeit -T /usr/bin/codesign -A
+security add-trusted-cert -d -r trustRoot -p codeSign -k ~/Library/Keychains/login.keychain-db cert.pem
+rm key.pem cert.p12  # keep cert.pem if you want a record; the key is now in the keychain
+
+# then build signed with it
+CSC_NAME="Worktree Command Center Dev" npm run dist:mac
+```
+
+This only satisfies Gatekeeper on machines that trust your certificate — it's not a
+substitute for a real Apple Developer ID (`developer.apple.com`, $99/year) plus
+notarization, which is what's needed to distribute to people who haven't set up your
+cert. `mac.identity` is intentionally left out of `package.json`'s `build` config so a
+fresh clone still builds (falls back to unsigned) without this cert present.
 
 ### Troubleshooting
 
