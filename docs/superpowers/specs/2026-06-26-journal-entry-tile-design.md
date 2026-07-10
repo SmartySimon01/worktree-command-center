@@ -151,7 +151,7 @@ journal tile (editor):                 journal tile (history):
 
 - **Format:** spawn `claude -p` with the note + a "fix indentation / structure, preserve every
   word" prompt; show a before/after preview; apply or discard.
-- **Convert to Linear:** spawn `claude` (inherits the `linear-cjb` MCP) with the note + a "split
+- **Convert to Linear:** spawn `claude` (inherits the `linear` MCP) with the note + a "split
   into 1..N Linear issues" instruction; render the proposed split as a preview; on **approve**,
   the same agent creates the issues and reports back links. One-or-many is the agent's call,
   shown for approval before anything is written.

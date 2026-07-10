@@ -8,7 +8,7 @@
 Enable the journal tile's **Convert to Linear** button. It runs in **two phases**: Claude reads
 the note and **proposes** a 1‑or‑more issue split; the tile shows each proposed issue with a
 **checkbox** (include/exclude); on **Create**, a second headless Claude **creates the checked
-issues** in the `CJBrothers` Linear team via the `linear-cjb` MCP; the tile then shows the
+issues** in the `<your-team>` Linear team via the `linear` MCP; the tile then shows the
 **created issue links** (and any per-issue failures). Nothing is created without the preview +
 explicit Create click.
 
@@ -19,8 +19,8 @@ explicit Create click.
 | Split | Claude decides 1..N issues; the user reviews and includes/excludes per issue (no inline editing in v1). |
 | Mechanism | Two one-shot headless `claude -p` runs (propose, then create), each reading its input from a temp file in `cwd` (note / chosen issues) — input never rides the Windows command line (same reason as Phase 2's fix). |
 | Propose tools | `--allowedTools Read` only (read the note temp file; no Linear access, no writes). |
-| Create tools | `--allowedTools mcp__linear-cjb__save_issue` only — the create step can ONLY create Linear issues, nothing else. No `--dangerously-skip-permissions`. |
-| Linear target | Team **CJBrothers** (id `0c1d60eb-eb84-4cd2-8a8c-d7b0926b28d5` — the only team). Team backlog, no project/label/assignee in v1. |
+| Create tools | `--allowedTools mcp__linear__save_issue` only — the create step can ONLY create Linear issues, nothing else. No `--dangerously-skip-permissions`. |
+| Linear target | Team **<your-team>** (id `<team-uuid>` — the only team). Team backlog, no project/label/assignee in v1. |
 | Structured I/O | Claude returns JSON; a robust `parseIssuesJson` extracts the array (strip ANSI, slice `[`…`]`, `JSON.parse`, validate shape). Malformed → clean error state. |
 | Approve UX | Per-issue checkboxes; the Create button label reflects the checked count; Discard creates none. |
 | Partial failure | The create step reports per-issue `{title, url?, ok, error?}`; the result view lists successes (with links) and failures separately. |
@@ -43,7 +43,7 @@ export function parseIssuesJson(raw: string): unknown[];
 export class LinearConvertProbe {
   constructor(opts: LinearConvertProbeOpts);
   propose(noteText: string): Promise<ProposedIssue[]>;          // claude -p --allowedTools Read
-  create(issues: ProposedIssue[]): Promise<CreatedIssue[]>;     // claude -p --allowedTools mcp__linear-cjb__save_issue
+  create(issues: ProposedIssue[]): Promise<CreatedIssue[]>;     // claude -p --allowedTools mcp__linear__save_issue
 }
 ```
 
@@ -59,7 +59,7 @@ export class LinearConvertProbe {
   Parse with `parseIssuesJson`, validate each has string `title`+`description` → `ProposedIssue[]`.
 - `create`: write the chosen issues to a temp JSON file; `buildCreatePrompt(issuesPath)` →
   > "Read the JSON array of issues at <path>. For EACH, create a Linear issue in team
-  > \"CJBrothers\" (id 0c1d60eb-eb84-4cd2-8a8c-d7b0926b28d5) using the available Linear tool, with
+  > \"<your-team>\" (id <team-uuid>) using the available Linear tool, with
   > its title and description. Output ONLY a JSON array `{\"title\": string, \"url\": string,
   > \"ok\": true}` per created issue, or `{\"title\": string, \"ok\": false, \"error\": string}`
   > if one failed. No preamble, no code fences."
@@ -92,8 +92,8 @@ export class LinearConvertProbe {
 ```
 proposed:                                  result:
 ┌ Journal 1 — Convert to Linear   🔒 – × ┐  ┌ Journal 1 — Created            🔒 – × ┐
-│ [x] Fix migrate on dev deploy          │  │ ✓ Fix migrate on dev deploy  CJB-101 │
-│     ↳ the deploy migrate failed …      │  │ ✓ ACH button on Weekly Pay   CJB-102 │
+│ [x] Fix migrate on dev deploy          │  │ ✓ Fix migrate on dev deploy  ABC-101 │
+│     ↳ the deploy migrate failed …      │  │ ✓ ACH button on Weekly Pay   ABC-102 │
 │ [x] Add ACH button to Weekly Payments  │  │ ✗ Ask Spencer … (error: …)           │
 │ [ ] Ask Spencer re: vendor list        │  │                                       │
 ├─────────────────────────────────────────┤  ├───────────────────────────────────────┤
@@ -107,7 +107,7 @@ proposed:                                  result:
 | Risk | Mitigation |
 | --- | --- |
 | Claude returns malformed JSON | `parseIssuesJson` slices `[`…`]` + tolerant parse; empty/invalid → toast "Couldn't read the proposed split" + back to editor. |
-| Creates real Linear issues (outward) | Two-step: preview + explicit Create; the create Claude is restricted to ONLY `mcp__linear-cjb__save_issue`. |
+| Creates real Linear issues (outward) | Two-step: preview + explicit Create; the create Claude is restricted to ONLY `mcp__linear__save_issue`. |
 | Partial create failure | Per-issue `{ok,error}`; result view shows successes + failures, nothing silently dropped. |
 | Note/issues with `%`, quotes, length | Always passed via temp file, never the command line (Phase 2 lesson). |
 | `save_issue` needs team resolution | Prompt supplies the team name AND id, so no extra lookup tool is needed. |
@@ -117,11 +117,11 @@ proposed:                                  result:
 ## 6. Testing
 
 - `tests/linear-convert-probe.test.ts` (pure): `buildProposePrompt`/`buildCreatePrompt` reference
-  the temp path + carry the strict instruction + the CJBrothers id (create); `parseIssuesJson`
+  the temp path + carry the strict instruction + the <your-team> id (create); `parseIssuesJson`
   extracts a well-formed array, tolerates a ```` ```json ```` fence + preamble, slices a leading
   "Here are the issues:" prefix, and returns `[]` for non-array / malformed input.
 - Propose/create spawns + tile DOM = build + manual: a multi-task note proposes >1 issue; unchecking
-  drops it from the count; Create makes real CJBrothers issues and the result links open; a note with
+  drops it from the count; Create makes real <your-team> issues and the result links open; a note with
   `%`/quotes converts intact; malformed/empty handled.
 
 ## 7. Out of scope (Phase 3 / v1)

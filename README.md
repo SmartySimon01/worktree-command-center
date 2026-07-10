@@ -36,6 +36,15 @@ Requires Node 18+ and Git on PATH. Claude Code (`claude`) must be installed and 
   automatically; if you still hit it, run `node scripts/fix-electron.mjs` (or
   `node node_modules/electron/install.js`) manually.
 
+## Private extensions
+
+The build looks for an optional, gitignored `private/` folder at the repo root. If
+`private/index.ts` exists, it is compiled into the app and its exported
+`registerPrivateFeatures(api)` runs once at startup; otherwise the no-op stub
+`src/private-stub.ts` is used. This lets you keep personal features in a separate
+private repo cloned at `private/`, with full TypeScript access to `src/`, without
+forking. The hook's surface is defined in `src/private-api.ts`.
+
 ## License
 
 MIT © Ronald Fridlyand
