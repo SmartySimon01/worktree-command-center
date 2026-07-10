@@ -10,6 +10,7 @@ import { AttentionWidget } from './ui/attention-widget';
 import { WorkspaceBar } from './ui/workspace-bar';
 import { normalizeWorkspaces, addWorkspace, closeWorkspace, nextActiveAfter, type Workspace } from './terminals/workspace-store';
 import * as path from 'path';
+import { registerPrivateFeatures } from 'wcc-private';
 
 declare global {
 	interface Window {
@@ -177,6 +178,21 @@ async function main(): Promise<void> {
 				toast(`Added ${found.length} repo(s)`);
 			})();
 		});
+
+		// Private overlay (see README "Private extensions"): must never take down the app.
+		try {
+			registerPrivateFeatures({
+				topBar,
+				activeGrid: () => activeGrid,
+				config: { get: () => window.wcc.getConfig(), set: (c) => window.wcc.setConfig(c) },
+				toast,
+				promptForTopic,
+				userData,
+				sidecarDir,
+			});
+		} catch (e) {
+			toast('Private features failed to load: ' + e);
+		}
 	} catch (e) {
 		document.body.textContent = 'Startup error: ' + e;
 	}

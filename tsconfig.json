@@ -9,7 +9,10 @@
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "noEmit": true,
-    "types": ["node"]
+    "types": ["node"],
+    "paths": {
+      "wcc-private": ["./private/index.ts", "./src/private-stub.ts"]
+    }
   },
   "include": ["src", "electron"]
 }
