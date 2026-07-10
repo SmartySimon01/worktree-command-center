@@ -22,7 +22,7 @@ import { classifyAttention, type AttentionItem } from './attention';
 import { JournalTile } from './journal-tile';
 import { JournalStore } from './journal-store';
 import { FormatProbe } from './format-probe';
-import { LinearConvertProbe } from './linear-convert-probe';
+import { LinearConvertProbe, type LinearConvertConfig } from './linear-convert-probe';
 import type { StageTile } from './stage-tile';
 
 export interface RepoConfig { name: string; path: string; remote?: string; group?: string; }
@@ -37,6 +37,7 @@ export interface GridDeps {
 	sessionsFile: string;
 	group: string;
 	bypassPermissions: boolean;
+	linearConvert?: LinearConvertConfig;
 	toast: (msg: string) => void;
 	promptForTopic: (title: string, placeholder: string, initial?: string, okLabel?: string) => Promise<string | null>;
 }
@@ -120,7 +121,7 @@ export class TerminalsGrid {
 		this.coordHookPath = deps.coordHookPath;
 		this.journalStore = new JournalStore(path.join(this.coordDir, 'journals'));
 		this.formatProbe = new FormatProbe({ sidecarPath: this.sidecarPath, cwd: this.coordDir });
-		this.linearProbe = new LinearConvertProbe({ sidecarPath: this.sidecarPath, cwd: this.coordDir });
+		this.linearProbe = new LinearConvertProbe({ sidecarPath: this.sidecarPath, cwd: this.coordDir, linear: deps.linearConvert });
 	}
 
 	/** Mount the grid into a page container. Sessions PERSIST across mounts (tab switches):
@@ -382,7 +383,13 @@ export class TerminalsGrid {
 			},
 			onRename: () => { void this.persist(); },
 			onFormat: (text) => this.formatProbe.format(text),
-			onConvertPropose: (text) => this.linearProbe.propose(text),
+			onConvertPropose: (text) => {
+				if (!this.deps.linearConvert) {
+					this.deps.toast('Convert to Linear is not configured — add linearConvert { team, teamId, saveIssueTool } to config.json in the app userData folder');
+					return Promise.reject(new Error('linear convert not configured'));
+				}
+				return this.linearProbe.propose(text);
+			},
 			onConvertCreate: (issues) => this.linearProbe.create(issues),
 		});
 		if (this.stageEl) tile.render(this.stageEl);
@@ -972,7 +979,13 @@ export class TerminalsGrid {
 					onRequestRename: (t, cur) => { void this.deps.promptForTopic('Rename journal', 'New name', cur, 'Rename').then((n) => { if (n && n.trim()) { t.setName(n.trim()); void this.persist(); } }); },
 					onRename: () => { void this.persist(); },
 					onFormat: (text) => this.formatProbe.format(text),
-					onConvertPropose: (text) => this.linearProbe.propose(text),
+					onConvertPropose: (text) => {
+						if (!this.deps.linearConvert) {
+							this.deps.toast('Convert to Linear is not configured — add linearConvert { team, teamId, saveIssueTool } to config.json in the app userData folder');
+							return Promise.reject(new Error('linear convert not configured'));
+						}
+						return this.linearProbe.propose(text);
+					},
 					onConvertCreate: (issues) => this.linearProbe.create(issues),
 				});
 				if (this.stageEl) tile.render(this.stageEl);

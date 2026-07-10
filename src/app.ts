@@ -2,6 +2,7 @@ import { installDomShim } from './ui/dom-shim';
 import { toast } from './ui/toast';
 import { promptForTopic } from './ui/prompt-dialog';
 import { TerminalsGrid, type GridDeps, type RepoConfig } from './terminals/terminals-grid';
+import { parseLinearConvertConfig } from './terminals/linear-convert-probe';
 import { discoverRepos, mergeRepos } from './workspace';
 import { UsageProbe } from './terminals/usage-probe';
 import { UsageWidget } from './ui/usage-widget';
@@ -62,6 +63,7 @@ async function main(): Promise<void> {
 			coordHookPath: path.join(sidecarDir, 'coord-hook.cjs'),
 			sessionsFile: path.join(userData, '.terminal-sessions.json'),
 			bypassPermissions: true,
+			linearConvert: parseLinearConvertConfig(cfg.linearConvert),
 			toast,
 			promptForTopic,
 		});
