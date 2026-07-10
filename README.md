@@ -45,6 +45,9 @@ The build looks for an optional, gitignored `private/` folder at the repo root. 
 private repo cloned at `private/`, with full TypeScript access to `src/`, without
 forking. The hook's surface is defined in `src/private-api.ts`.
 
+`npm run dist` refuses to package installers while `private/` is present (set
+`WCC_ALLOW_PRIVATE_DIST=1` to include the overlay deliberately).
+
 ## License
 
 MIT © Ronald Fridlyand

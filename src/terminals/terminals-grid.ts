@@ -385,7 +385,7 @@ export class TerminalsGrid {
 			onFormat: (text) => this.formatProbe.format(text),
 			onConvertPropose: (text) => {
 				if (!this.deps.linearConvert) {
-					this.deps.toast('Convert to Linear is not configured — add linearConvert { team, teamId, saveIssueTool } to config.json in the app userData folder');
+					this.deps.toast('Convert to Linear is not configured — add linearConvert { team, teamId, saveIssueTool } to config.json in the app userData folder, then restart the app');
 					return Promise.reject(new Error('linear convert not configured'));
 				}
 				return this.linearProbe.propose(text);
@@ -981,7 +981,7 @@ export class TerminalsGrid {
 					onFormat: (text) => this.formatProbe.format(text),
 					onConvertPropose: (text) => {
 						if (!this.deps.linearConvert) {
-							this.deps.toast('Convert to Linear is not configured — add linearConvert { team, teamId, saveIssueTool } to config.json in the app userData folder');
+							this.deps.toast('Convert to Linear is not configured — add linearConvert { team, teamId, saveIssueTool } to config.json in the app userData folder, then restart the app');
 							return Promise.reject(new Error('linear convert not configured'));
 						}
 						return this.linearProbe.propose(text);

@@ -75,7 +75,9 @@ async function main(): Promise<void> {
 		};
 		let activeGrid = gridFor(activeId);
 
-		const persist = (): void => void window.wcc.setConfig({ ...cfg, repos, workspaces, activeWorkspace: activeId });
+		// Merge over a FRESH read: other writers (e.g. the private overlay via PrivateApi.config.set)
+		// must not have their keys clobbered by this startup-snapshot spread.
+		const persist = (): void => void window.wcc.getConfig().then((fresh) => window.wcc.setConfig({ ...fresh, repos, workspaces, activeWorkspace: activeId }));
 
 		// Attention queue reads whichever grid is ACTIVE (closures over the mutable activeGrid).
 		const attention = new AttentionWidget(() => activeGrid.attentionItems(), (tileId) => activeGrid.revealTile(tileId));
