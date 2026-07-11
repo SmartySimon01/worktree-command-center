@@ -42,18 +42,18 @@ export interface GridDeps {
 }
 interface SessionRecord { worktreePath: string; branch: string; repoName: string; repoPath: string; baseBranch: string; name?: string; hidden?: boolean; kind?: 'terminal' | 'journal'; journalSlug?: string; }
 
-// --- Kane personality mode (toggled by his /personality command) ---
-const KANE_PERSONA_ON =
-	'[personality: ON] Speak as Kane the forge-master from now on — terse, gruff, dry, in command ' +
+// --- Able personality mode (toggled by his /personality command) ---
+const ABLE_PERSONA_ON =
+	'[personality: ON] Speak as Able the forge-master from now on — terse, gruff, dry, in command ' +
 	'of the floor; the worker terminals are your smiths and their branches are iron on the anvil. ' +
 	'Drop the odd forge/river turn of phrase, never flowery. Keep doing your job exactly as before ' +
 	'(same tools, same restraint — you still do not run the floor unprompted), just in that voice. ' +
 	'Periodically you will get a line starting "[pulse]" — answer each with ONE punchy sentence on ' +
 	'the floor\'s state right now. Confirm now with a single line, in character.';
-const KANE_PERSONA_OFF =
+const ABLE_PERSONA_OFF =
 	'[personality: OFF] Drop the forge-master voice — back to your plain, neutral overseer tone. ' +
 	'The "[pulse]" nudges have stopped; ignore any you still see. Acknowledge in one short line.';
-const KANE_PULSE = '[pulse] One line, in character: what\'s the floor doing right now?';
+const ABLE_PULSE = '[pulse] One line, in character: what\'s the floor doing right now?';
 
 /** Controls bar + a bubbling stage of embedded claude terminals, scoped to one repo group. */
 export class TerminalsGrid {
@@ -86,7 +86,7 @@ export class TerminalsGrid {
 	private godBtn: HTMLButtonElement | null = null;
 	private godConsole: GodConsole | null = null;
 	private godVisible = false;
-	private kanePersonality = false;          // off = Kane behaves exactly as today (no persona, no pulses)
+	private ablePersonality = false;          // off = Able behaves exactly as today (no persona, no pulses)
 	private pulseTimer: number | null = null;
 	private readonly pulseMs = 12 * 60 * 1000; // proactive floor-pulse cadence while personality is on
 	private watchers: Array<{ target: string; note: string }> = [];
@@ -162,8 +162,8 @@ export class TerminalsGrid {
 		// this.selectBtn = controls.createEl('button', { text: '⊕ Select' });
 		// this.selectBtn.addEventListener('click', () => this.setSelecting(!this.selecting));
 
-		this.godBtn = controls.createEl('button', { text: '🜲 Kane', cls: 'cos-god-btn' });
-		this.godBtn.setAttribute('title', 'Open the Kane overseer console — sees the whole floor, acts on request');
+		this.godBtn = controls.createEl('button', { text: '🜲 Able', cls: 'cos-god-btn' });
+		this.godBtn.setAttribute('title', 'Open the Able overseer console — sees the whole floor, acts on request');
 		this.godBtn.addEventListener('click', () => this.toggleGod());
 
 		const viewCode = controls.createEl('button', { text: '🧩 View Code' });
@@ -351,9 +351,9 @@ export class TerminalsGrid {
 		}
 	}
 
-	/** Kane asked to spawn a terminal: resolve the repo by name, default the base branch, start
+	/** Able asked to spawn a terminal: resolve the repo by name, default the base branch, start
 	 *  it on the given task. */
-	private async spawnFromKane(repoName: string, base: string | null, task: string): Promise<void> {
+	private async spawnFromAble(repoName: string, base: string | null, task: string): Promise<void> {
 		const known = this.repos.some((r) => r.name === repoName || r.name.toLowerCase() === repoName.toLowerCase());
 		if (!known) { this.writeGodInbox(`cannot spawn — unknown repo "${repoName}". Known: ${this.repos.map((r) => r.name).join(', ') || '(none)'}`); return; }
 		await this.spawnFromName(repoName, base, task);
@@ -498,7 +498,7 @@ export class TerminalsGrid {
 		return this.idleTiles.has(t.tileId) ? 'idle' : 'running';
 	}
 
-	/** Floor snapshot for the phone view: every session (+ Kane) with state + recent output. */
+	/** Floor snapshot for the phone view: every session (+ Able) with state + recent output. */
 	floorState(): RemoteTerminal[] {
 		const out: RemoteTerminal[] = (this.allSessions().filter((t) => !t.isJournal) as TerminalTile[]).map((t) => ({
 			id: t.tileId, name: t.name, repo: this.repoNameFor(t), branch: t.branch,
@@ -507,7 +507,7 @@ export class TerminalsGrid {
 		if (this.godConsole) {
 			const ko = this.godConsole.recentOutput();
 			out.unshift({
-				id: -1, name: 'Kane', repo: '—', branch: '—',
+				id: -1, name: 'Able', repo: '—', branch: '—',
 				state: looksLikePrompt(ko) ? 'prompt' : looksLikeMenu(ko) ? 'menu' : 'running',
 				output: ko.split('\n').slice(-12).join('\n'), remoteOn: false,
 			});
@@ -641,7 +641,7 @@ export class TerminalsGrid {
 		}
 	}
 
-	/** Act on one parsed Kane command (tell a worker / register a watch / spawn a terminal). */
+	/** Act on one parsed Able command (tell a worker / register a watch / spawn a terminal). */
 	private dispatchOutbox(msg: OutboxMessage, liveNames: string[]): void {
 		if (msg.kind === 'tell') {
 			const name = resolveTellTarget(msg.target, liveNames);
@@ -655,30 +655,30 @@ export class TerminalsGrid {
 		} else if (msg.kind === 'personality') {
 			this.togglePersonality();
 		} else {
-			void this.spawnFromKane(msg.repo, msg.base, msg.task);
+			void this.spawnFromAble(msg.repo, msg.base, msg.task);
 		}
 	}
 
-	/** Flip Kane's personality mode (triggered by his `/personality` command). On = inject the
+	/** Flip Able's personality mode (triggered by his `/personality` command). On = inject the
 	 *  forge-master persona + start periodic floor pulses; off = revert to the plain overseer
 	 *  voice + stop pulses. State is app-side so the pulse cadence is gated cleanly. */
 	private togglePersonality(): void {
-		this.kanePersonality = !this.kanePersonality;
-		if (this.kanePersonality) {
-			this.godConsole?.notify(KANE_PERSONA_ON);
+		this.ablePersonality = !this.ablePersonality;
+		if (this.ablePersonality) {
+			this.godConsole?.notify(ABLE_PERSONA_ON);
 			this.startPulse();
 		} else {
-			this.godConsole?.notify(KANE_PERSONA_OFF);
+			this.godConsole?.notify(ABLE_PERSONA_OFF);
 			this.stopPulse();
 		}
 	}
 
-	/** Begin nudging Kane for a one-line floor pulse on a fixed cadence (only while he's visible —
+	/** Begin nudging Able for a one-line floor pulse on a fixed cadence (only while he's visible —
 	 *  no point pulsing a hidden panel). */
 	private startPulse(): void {
 		if (this.pulseTimer !== null) return;
 		this.pulseTimer = window.setInterval(() => {
-			if (this.kanePersonality && this.godVisible) this.godConsole?.notify(KANE_PULSE);
+			if (this.ablePersonality && this.godVisible) this.godConsole?.notify(ABLE_PULSE);
 		}, this.pulseMs);
 	}
 
@@ -826,7 +826,7 @@ export class TerminalsGrid {
 				for (const w of fired) this.godConsole?.notify(`[watch] terminal "${t.name}" finished — you asked: ${w.note}`);
 			}
 		}
-		// Deliver a Kane-spawned terminal's initial task once it's first ready.
+		// Deliver an Able-spawned terminal's initial task once it's first ready.
 		const task = this.pendingTask.get(t.tileId);
 		if (task !== undefined) { this.pendingTask.delete(t.tileId); t.sendLine(task); }
 

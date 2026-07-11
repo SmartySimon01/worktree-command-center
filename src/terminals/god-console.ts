@@ -39,10 +39,10 @@ export class GodConsole {
 	render(parent: HTMLElement): void {
 		this.el = parent.createDiv({ cls: 'cos-god-panel' });
 		const head = this.el.createDiv({ cls: 'cos-god-head' });
-		head.createSpan({ text: '🜲 Kane' });
-		const refreshBtn = head.createEl('button', { text: '⟳', cls: 'cos-term-refresh', attr: { title: 'Refresh Kane — reload with --continue (keeps the conversation)' } });
+		head.createSpan({ text: '🜲 Able' });
+		const refreshBtn = head.createEl('button', { text: '⟳', cls: 'cos-term-refresh', attr: { title: 'Refresh Able — reload with --continue (keeps the conversation)' } });
 		refreshBtn.addEventListener('click', (e) => { e.stopPropagation(); void this.refresh(); });
-		const hide = head.createEl('button', { text: '×', attr: { title: 'Hide Kane (session keeps running)' } });
+		const hide = head.createEl('button', { text: '×', attr: { title: 'Hide Able (session keeps running)' } });
 		hide.addEventListener('click', (e) => { e.stopPropagation(); this.onHide(); });
 
 		this.bodyEl = this.el.createDiv({ cls: 'cos-god-body' });
@@ -106,7 +106,7 @@ export class GodConsole {
 		// xterm's native paste in the capture phase so a right-click doesn't paste twice.
 		this.bodyEl.addEventListener('paste', (e) => { e.preventDefault(); e.stopImmediatePropagation(); }, true);
 		this.fitThrottle = new FitThrottle({
-			// Kane lives in a fixed-width dock (never bubbles), so fit it to its actual size —
+			// Able lives in a fixed-width dock (never bubbles), so fit it to its actual size —
 			// no minimum clamp (clamping would clip his own readable content).
 			propose: () => this.fit?.proposeDimensions() ?? null,
 			apply: (cols, rows) => { this.term?.resize(cols, rows); this.bridge?.resize(cols, rows); },
@@ -120,19 +120,19 @@ export class GodConsole {
 		this.resizeObs.observe(this.bodyEl);
 	}
 
-	/** Build args/env, create Kane's session bridge, wire it, and start it. Called from render()
+	/** Build args/env, create Able's session bridge, wire it, and start it. Called from render()
 	 *  and from refresh(). resume → claude --continue; fallbackFresh → if --continue finds no
-	 *  conversation, relaunch a FRESH session in place (so ⟳ revives a dead Kane). */
+	 *  conversation, relaunch a FRESH session in place (so ⟳ revives a dead Able). */
 	private startSession(resume: boolean, fallbackFresh = false): void {
 		const ctxFile = this.writeSystemPromptFile();
-		this.writeKaneCommands();
+		this.writeAbleCommands();
 		const args: string[] = resume ? ['--continue'] : [];
 		if (ctxFile) args.push('--append-system-prompt-file', ctxFile);
 		const sidecarDir = path.dirname(this.opts.sidecarPath);
 		const env: Record<string, string> = {
 			COS_COORD_DIR: this.opts.coordDir,
 			COS_TERMINAL_ID: '0',
-			COS_TERMINAL_NAME: 'Kane',
+			COS_TERMINAL_NAME: 'Able',
 			COS_ROLE: 'god',
 			PATH: sidecarDir + path.delimiter + (process.env.PATH ?? ''),
 		};
@@ -146,12 +146,12 @@ export class GodConsole {
 				this.startSession(false);
 				return;
 			}
-			this.term?.write(`\r\n[Kane session ended (code ${code ?? '?'})]\r\n`);
+			this.term?.write(`\r\n[Able session ended (code ${code ?? '?'})]\r\n`);
 		});
 		this.bridge.start();
 	}
 
-	/** Kane has no ready-marker, so approximate "busy" from output activity: any output marks
+	/** Able has no ready-marker, so approximate "busy" from output activity: any output marks
 	 *  busy and (re)arms a short timer that clears it once output goes quiet. */
 	private markBusy(): void {
 		this.busy = true;
@@ -159,11 +159,11 @@ export class GodConsole {
 		this.busyTimer = window.setTimeout(() => { this.busy = false; this.busyTimer = null; }, 1500);
 	}
 
-	/** Refresh Kane: kill + relaunch with --continue in place, resuming his conversation.
+	/** Refresh Able: kill + relaunch with --continue in place, resuming his conversation.
 	 *  Confirms first only if he's mid-output. */
 	async refresh(): Promise<void> {
 		if (this.busy) {
-			const ok = await promptForConfirm('Refresh Kane?', 'Kane is mid-response. Refreshing interrupts it and reloads with --continue (the conversation is kept).', 'Refresh');
+			const ok = await promptForConfirm('Refresh Able?', 'Able is mid-response. Refreshing interrupts it and reloads with --continue (the conversation is kept).', 'Refresh');
 			if (!ok) return;
 		}
 		if (this.busyTimer !== null) { window.clearTimeout(this.busyTimer); this.busyTimer = null; }
@@ -183,7 +183,7 @@ export class GodConsole {
 	focus(): void { this.term?.focus(); }
 	blur(): void { this.term?.blur(); }
 
-	/** Last ≤20 non-blank lines of Kane's buffer — for the phone floor view. */
+	/** Last ≤20 non-blank lines of Able's buffer — for the phone floor view. */
 	recentOutput(): string {
 		const t = this.term;
 		if (!t) return '';
@@ -195,7 +195,7 @@ export class GodConsole {
 		return lines.join('\n');
 	}
 
-	/** Inject a line into Kane's session (text + a separated Enter so ConPTY can't coalesce
+	/** Inject a line into Able's session (text + a separated Enter so ConPTY can't coalesce
 	 *  them) — used to ping him when a watch fires. */
 	notify(text: string): void {
 		this.bridge?.write(text);
@@ -256,17 +256,17 @@ export class GodConsole {
 		this.fitThrottle?.schedule();
 	}
 
-	/** Drop a project-level `/personality` slash command + a scoped settings file into Kane's
-	 *  home dir. The command makes Kane run `cos-coord personality` (the app drains it and flips
+	/** Drop a project-level `/personality` slash command + a scoped settings file into Able's
+	 *  home dir. The command makes Able run `cos-coord personality` (the app drains it and flips
 	 *  the mode); the settings pre-allow `cos-coord` so the toggle/tell/watch/spawn don't each
-	 *  pop a permission prompt. Everything else still prompts (Kane stays non-bypass). */
-	private writeKaneCommands(): void {
+	 *  pop a permission prompt. Everything else still prompts (Able stays non-bypass). */
+	private writeAbleCommands(): void {
 		try {
 			const cmdDir = path.join(this.opts.godHomeDir, '.claude', 'commands');
 			fs.mkdirSync(cmdDir, { recursive: true });
 			fs.writeFileSync(path.join(cmdDir, 'personality.md'), [
 				'---',
-				'description: Toggle Kane\'s personality (forge-master persona + periodic floor pulses) on/off',
+				'description: Toggle Able\'s personality (forge-master persona + periodic floor pulses) on/off',
 				'---',
 				'Run exactly this command and nothing else, then confirm in one short line:',
 				'',
