@@ -6,7 +6,7 @@
   "author": "Ronald Fridlyand",
   "main": "dist/main.js",
   "scripts": {
-    "postinstall": "node scripts/fix-electron.mjs",
+    "postinstall": "node scripts/fix-electron.mjs && node scripts/fix-node-pty.mjs",
     "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs",
     "start": "npm run build && electron .",
     "test": "vitest run",
@@ -54,6 +54,10 @@
       {
         "from": "pty-sidecar",
         "to": "pty-sidecar"
+      },
+      {
+        "from": "node_modules/node-pty",
+        "to": "pty-sidecar/node_modules/node-pty"
       }
     ]
   }
