@@ -53,6 +53,7 @@ export class TerminalTile implements StageTile {
 	private pasting = false;
 	private selected = false;
 	private idle = false; // false = busy/starting; true once the session goes ready (refresh confirms only when busy)
+	private ended = false; // true once the claude process has exited and nothing is listening on the pty
 	readonly isJournal = false;
 
 	constructor(private opts: TerminalTileOpts) {
@@ -172,6 +173,10 @@ export class TerminalTile implements StageTile {
 		this.fitSoon();
 
 		this.term.onData((d) => {
+			// The pty is dead (claude exited) — nothing is listening, so forwarding keystrokes would
+			// silently vanish. Instead, ANY key revives the session in place (--continue, falling back
+			// to fresh if there's no conversation to resume), matching what ⟳ does.
+			if (this.ended) { this.ended = false; this.term?.reset(); this.startSession(true, true); return; }
 			this.bridge?.write(d);
 			if (this.pasting) return; // pasted content (incl. its newlines) is NOT a submit
 			if (d.includes('\r')) { this.idle = false; this.opts.onEnter?.(this); }
@@ -450,6 +455,7 @@ export class TerminalTile implements StageTile {
 	 *  --continue finds no conversation (transcript gone), relaunch a FRESH session in place,
 	 *  so ⟳ can revive a terminal that says "No conversation found to continue". */
 	private startSession(resume: boolean, fallbackFresh = false): void {
+		this.ended = false;
 		const args = resume ? ['--continue'] : [];
 		if (this.opts.bypassPermissions) args.push('--dangerously-skip-permissions');
 		const ctxFile = this.writeContextFile();
@@ -470,7 +476,9 @@ export class TerminalTile implements StageTile {
 				this.startSession(false);
 				return;
 			}
-			this.term?.write(`\r\n[session ended (code ${code ?? '?'})]\r\n`);
+			this.ended = true;
+			this.idle = true; // nothing running — a ⟳/keypress revival shouldn't ask "still working?"
+			this.term?.write(`\r\n[session ended (code ${code ?? '?'}) — press any key, or ⟳ above, to start a new one]\r\n`);
 		});
 		this.bridge.onReady(() => { this.idle = true; this.opts.onReady?.(this); });
 		this.bridge.start();
