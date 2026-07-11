@@ -9,6 +9,7 @@ import { scrollIntentForKey, type ScrollIntent } from './scroll-keys';
 import { FitThrottle } from './fit-throttle';
 import { ctrlClickActivator, openExternalUrl } from './links';
 import { promptForConfirm } from '../ui/prompt-dialog';
+import { stripAnsi } from './usage-parse';
 import type { StageTile } from './stage-tile';
 
 export interface TerminalTileOpts {
@@ -469,9 +470,14 @@ export class TerminalTile implements StageTile {
 		};
 		let probe = ''; // first bytes only (capped) — used to detect the --continue "no conversation" exit
 		this.bridge = new SessionBridge(this.opts.sidecarPath, this.opts.worktree.worktreePath, 'claude', args, env);
-		this.bridge.onData((d) => { if (fallbackFresh && probe.length < 2048) probe += d; this.term?.write(d); });
+		this.bridge.onData((d) => { if (fallbackFresh && probe.length < 4096) probe += d; this.term?.write(d); });
 		this.bridge.onExit((code) => {
-			if (fallbackFresh && /no conversation found to continue/i.test(probe)) {
+			// Claude's TUI often justifies/wraps text with absolute cursor-position escapes
+			// (ESC[<N>G) INSTEAD of literal spaces between words — stripping the ANSI out then
+			// collapses "No conversation found to continue" to "Noconversationfoundtocontinue"
+			// with no whitespace at all. Strip ANSI first, then allow \s* (not a literal space)
+			// between each word so the match survives either rendering.
+			if (fallbackFresh && /no\s*conversation\s*found\s*to\s*continue/i.test(stripAnsi(probe))) {
 				this.term?.reset();          // --continue had nothing to resume → start fresh in place
 				this.startSession(false);
 				return;
