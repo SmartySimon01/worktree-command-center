@@ -36,6 +36,17 @@ function createWindow(): void {
 
 	win.loadFile(path.join(__dirname, '..', 'index.html'));
 
+	// Block Electron's default Cmd/Ctrl+R and Cmd/Ctrl+Shift+R (reload / force-reload): every
+	// terminal tile's state lives only in this renderer's memory, tied to real spawned `claude`
+	// processes it owns — a page reload wipes all of that instantly without ever running the
+	// tiles' own kill()/cleanup, orphaning those processes and their worktree locks while the
+	// fresh page reconstructs the UI from stale-on-disk config. There's no scenario where
+	// reloading this app (as opposed to quitting/relaunching it) is the right call.
+	win.webContents.on('before-input-event', (event, input) => {
+		const isReloadCombo = (input.meta || input.control) && input.key.toLowerCase() === 'r';
+		if (isReloadCombo) event.preventDefault();
+	});
+
 	// IPC: return resolved paths
 	ipcMain.handle('paths', () => ({ sidecarDir, userData }));
 
