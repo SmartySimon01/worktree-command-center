@@ -1,5 +1,6 @@
 import { SessionBridge } from './session-bridge';
 import { parseUsage, stripAnsi, type UsageReadout } from './usage-parse';
+import { looksLikeMenu } from './prompt-detect';
 
 export interface UsageProbeOpts { sidecarPath: string; cwd: string; }
 
@@ -22,11 +23,22 @@ export class UsageProbe {
 			b.onReady(() => { this.ready = true; });
 			b.start();
 		}
-		// Resolve on first ready, or after a boot timeout (claude takes a few seconds).
+		// Resolve on first ready THAT ISN'T A MENU, or after a boot timeout (claude takes a few
+		// seconds). A first-run prompt (e.g. "Claude in Chrome extension detected") also goes idle
+		// and would otherwise look "ready" — sending "/usage" into it types menu-navigation
+		// keystrokes instead of a command, and the probe never recovers. Dismiss any such menu with
+		// Escape (the right call for a hidden background session either way — it should never pick
+		// up tool/browser permissions) and keep waiting for the real prompt.
 		return new Promise((resolve) => {
 			const started = Date.now();
 			const iv = window.setInterval(() => {
-				if (this.ready || Date.now() - started > 9000) { window.clearInterval(iv); resolve(); }
+				if (Date.now() - started > 9000) { window.clearInterval(iv); resolve(); return; }
+				if (!this.ready) return;
+				// Tail-only: the buffer accumulates for the whole session, so a menu dismissed
+				// earlier is still in there — checking the full text would match it forever.
+				if (looksLikeMenu(stripAnsi(this.buf).slice(-1000))) { this.ready = false; this.bridge?.write('\x1b'); return; }
+				window.clearInterval(iv);
+				resolve();
 			}, 200);
 		});
 	}
