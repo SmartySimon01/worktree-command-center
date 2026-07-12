@@ -7,7 +7,9 @@ import { nextWorktreeBranch, parseWorktreeList, parseStatusPorcelain, parseAhead
 import { runCommand } from '../command-runner';
 import { TerminalTile } from './terminal-tile';
 import { BoardView } from './board-view';
-import { promptForConfirm } from '../ui/prompt-dialog';
+import { promptForConfirm, promptForChoice } from '../ui/prompt-dialog';
+import { openExternalUrl, revealInFileManager } from './links';
+import { EDITORS, FILE_BROWSER, CUSTOM_EDITOR, resolveEditorCommand, type EditorDef } from './editor-launch';
 import { ChatRoom } from './chat-room';
 import { ChatTile } from './chat-tile';
 import { settledLayout, centeredLayout, keyForIndex, keyToIndex, physicalKeyLabel } from './bubble-layout';
@@ -168,7 +170,7 @@ export class TerminalsGrid {
 		this.godBtn.addEventListener('click', () => this.toggleGod());
 
 		const viewCode = controls.createEl('button', { text: '🧩 View Code' });
-		viewCode.addEventListener('click', () => this.openInVSCode());
+		viewCode.addEventListener('click', () => void this.openInEditor());
 
 
 		const refreshBtn = controls.createEl('button', { text: '⟳ Refresh' });
@@ -394,15 +396,116 @@ export class TerminalsGrid {
 		void this.persist();
 	}
 
-	/** Open the repo selected in the dropdown in a VS Code window. */
-	private openInVSCode(): void {
+	/** Try launching one editor on a repo path. Unlike the old `spawn(..., {shell:true})` call,
+	 *  this actually waits for the real outcome instead of assuming success the instant spawn()
+	 *  returns without throwing — `shell:true` swallows a "command not found" asynchronously
+	 *  inside the shell, so the old code showed "Opening…" even when nothing happened. A GUI
+	 *  editor launched via `open -a` (mac) typically exits 0 quickly once it's handed off; a CLI
+	 *  command may keep running (some fork+detach, some don't), so treat "still running after a
+	 *  beat" as success too. */
+	private trySpawnEditor(cmd: string, args: string[]): Promise<boolean> {
+		return new Promise((resolve) => {
+			let settled = false;
+			const done = (ok: boolean): void => { if (!settled) { settled = true; resolve(ok); } };
+			let proc;
+			try { proc = spawn(cmd, args, { windowsHide: true }); } catch { done(false); return; }
+			proc.on('error', () => done(false));
+			proc.on('exit', (code) => done(code === 0 || code === null));
+			window.setTimeout(() => done(true), 1200);
+		});
+	}
+
+	/** Open the repo selected in the dropdown in the user's preferred editor. First try: the
+	 *  saved preference (or VS Code, the historical default, if none saved yet). On failure —
+	 *  editor not installed, or never configured — offer a picker of common editors plus a
+	 *  Finder/Explorer fallback and a custom-command option; remember whichever one works so
+	 *  future clicks skip straight to it. If the newly-picked editor ALSO isn't installed, offer
+	 *  to open its download page rather than silently failing again. */
+	private async openInEditor(): Promise<void> {
 		const repo = this.selectedRepo();
 		if (!repo) { this.deps.toast('Pick a repo first'); return; }
-		try {
-			spawn('code', [repo.path], { shell: true, windowsHide: true });
-			this.deps.toast(`Opening ${repo.name} in VS Code…`);
-		} catch (e) {
-			this.deps.toast(`View Code failed: ${(e as Error).message}`);
+
+		const cfg = await window.wcc.getConfig();
+		const savedId = typeof cfg.preferredEditorId === 'string' ? cfg.preferredEditorId : null;
+		const savedCustomCmd = typeof cfg.preferredEditorCustomCmd === 'string' ? cfg.preferredEditorCustomCmd : null;
+
+		if (savedId === 'file-browser') { revealInFileManager(repo.path); this.deps.toast(`Revealed ${repo.name}`); return; }
+		if (savedId === 'custom' && savedCustomCmd) {
+			if (await this.trySpawnEditor(savedCustomCmd, [repo.path])) { this.deps.toast(`Opening ${repo.name}…`); return; }
+		} else if (savedId) {
+			const editor = EDITORS.find((e) => e.id === savedId);
+			const launch = editor ? resolveEditorCommand(editor, repo.path, process.platform) : null;
+			if (editor && launch && await this.trySpawnEditor(launch.cmd, launch.args)) {
+				this.deps.toast(`Opening ${repo.name} in ${editor.label}…`);
+				return;
+			}
+		} else {
+			// No preference saved yet — try the historical default (VS Code) once, silently, before
+			// ever bothering the user with a picker.
+			const vscode = EDITORS[0]!;
+			const launch = resolveEditorCommand(vscode, repo.path, process.platform);
+			if (launch && await this.trySpawnEditor(launch.cmd, launch.args)) {
+				this.deps.toast(`Opening ${repo.name} in ${vscode.label}…`);
+				await window.wcc.setConfig({ ...(await window.wcc.getConfig()), preferredEditorId: vscode.id });
+				return;
+			}
+		}
+
+		await this.pickAndLaunchEditor(repo.name, repo.path);
+	}
+
+	/** The picker shown after a launch attempt fails: choose an editor, remember it, and if it
+	 *  ALSO fails to launch (not installed), offer its download page. */
+	private async pickAndLaunchEditor(repoName: string, repoPath: string): Promise<void> {
+		const options = [
+			...EDITORS.map((e) => ({ id: e.id, label: e.label })),
+			{ id: FILE_BROWSER.id, label: FILE_BROWSER.label },
+			{ id: CUSTOM_EDITOR.id, label: CUSTOM_EDITOR.label },
+		];
+		const choice = await promptForChoice(
+			'Open in…',
+			"Couldn't open that editor — pick one to use (remembered for next time):",
+			options,
+		);
+		if (!choice) return;
+
+		if (choice === FILE_BROWSER.id) {
+			revealInFileManager(repoPath);
+			await window.wcc.setConfig({ ...(await window.wcc.getConfig()), preferredEditorId: choice });
+			this.deps.toast(`Revealed ${repoName}`);
+			return;
+		}
+
+		if (choice === CUSTOM_EDITOR.id) {
+			const cmd = await this.deps.promptForTopic('Custom editor command', 'e.g. subl, code, /usr/local/bin/myeditor', '', 'Save');
+			if (!cmd) return;
+			if (await this.trySpawnEditor(cmd, [repoPath])) {
+				await window.wcc.setConfig({ ...(await window.wcc.getConfig()), preferredEditorId: choice, preferredEditorCustomCmd: cmd });
+				this.deps.toast(`Opening ${repoName}…`);
+			} else {
+				this.deps.toast(`Couldn't run "${cmd}" — check the command and try again`);
+			}
+			return;
+		}
+
+		const editor = EDITORS.find((e) => e.id === choice) as EditorDef;
+		const launch = resolveEditorCommand(editor, repoPath, process.platform);
+		if (launch && await this.trySpawnEditor(launch.cmd, launch.args)) {
+			await window.wcc.setConfig({ ...(await window.wcc.getConfig()), preferredEditorId: choice });
+			this.deps.toast(`Opening ${repoName} in ${editor.label}…`);
+			return;
+		}
+
+		if (editor.downloadUrl) {
+			const install = await promptForConfirm(
+				`${editor.label} isn't installed`,
+				`Couldn't launch ${editor.label} — it doesn't look installed. Open its download page?`,
+				'Open download page',
+			);
+			if (install) {
+				openExternalUrl(editor.downloadUrl);
+				this.deps.toast(`Opened the ${editor.label} download page — click View Code again once it's installed`);
+			}
 		}
 	}
 

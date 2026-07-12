@@ -39,6 +39,55 @@ export function promptForTopic(title: string, placeholder: string, initial = '',
 	});
 }
 
+// A vertical list of labeled choices, one button per option. Resolves the chosen id, or null
+// on cancel/Escape. Matches promptForTopic's styling.
+export function promptForChoice(title: string, message: string, options: { id: string; label: string; sublabel?: string }[]): Promise<string | null> {
+	return new Promise((resolve) => {
+		const dlg = document.createElement('dialog');
+		dlg.style.cssText = 'background:#1a1c28;color:#e0e0e0;border:1px solid #3a3d52;border-radius:8px;padding:16px;min-width:340px;max-width:460px;font:13px system-ui,sans-serif';
+
+		const h = document.createElement('div');
+		h.textContent = title;
+		h.style.cssText = 'font-weight:600;margin-bottom:6px';
+
+		const msg = document.createElement('div');
+		msg.textContent = message;
+		msg.style.cssText = 'color:#b8bccb;margin-bottom:12px;line-height:1.45';
+
+		const list = document.createElement('div');
+		list.style.cssText = 'display:flex;flex-direction:column;gap:6px;margin-bottom:12px';
+
+		const done = (val: string | null): void => { dlg.close(); dlg.remove(); resolve(val); };
+
+		for (const opt of options) {
+			const btn = document.createElement('button');
+			btn.style.cssText = 'text-align:left;padding:8px 10px;background:#0e0f17;color:#e0e0e0;border:1px solid #3a3d52;border-radius:4px;cursor:pointer';
+			btn.textContent = opt.label;
+			if (opt.sublabel) {
+				const sub = document.createElement('div');
+				sub.textContent = opt.sublabel;
+				sub.style.cssText = 'color:#7a7f96;font-size:11px;margin-top:2px';
+				btn.appendChild(sub);
+			}
+			btn.addEventListener('click', () => done(opt.id));
+			list.appendChild(btn);
+		}
+
+		const row = document.createElement('div');
+		row.style.cssText = 'display:flex;justify-content:flex-end';
+		const cancel = document.createElement('button');
+		cancel.textContent = 'Cancel';
+		cancel.addEventListener('click', () => done(null));
+		row.append(cancel);
+
+		dlg.append(h, msg, list, row);
+		document.body.appendChild(dlg);
+
+		dlg.addEventListener('cancel', (e) => { e.preventDefault(); done(null); }); // native Esc
+		dlg.showModal();
+	});
+}
+
 // A yes/no confirm dialog matching promptForTopic's styling. Resolves true on confirm,
 // false on cancel/Escape. The OK button is styled destructive (red).
 export function promptForConfirm(title: string, message: string, okLabel = 'Confirm'): Promise<boolean> {
