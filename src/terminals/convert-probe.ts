@@ -1,0 +1,89 @@
+import { SessionBridge } from './session-bridge';
+import { stripAnsi } from './usage-parse';
+import * as fs from 'fs';
+import * as path from 'path';
+import type { TrackerDestination } from './convert-destinations';
+
+export interface ConvertProbeOpts { sidecarPath: string; cwd: string; }
+export interface ProposedIssue { title: string; description: string; }
+export interface CreatedIssue { title: string; url?: string; ok: boolean; error?: string; }
+
+export function buildProposePrompt(notePath: string): string {
+	return (
+		`Read the note at ${notePath}. Split it into the SMALLEST sensible set of actionable ` +
+		'issues/tasks — often just one; more only if it clearly contains distinct tasks. Output ONLY a ' +
+		'JSON array of objects {"title": string, "description": string}: title concise, description the ' +
+		'relevant note context. No preamble, no explanation, no code fences.'
+	);
+}
+
+export function buildCreatePrompt(issuesPath: string, dest: TrackerDestination): string {
+	return (
+		`Read the JSON array of issues at ${issuesPath}. For EACH issue, create an issue/task in ` +
+		`${dest.target} using the ${dest.mcpTool} tool, with its title and description. Output ONLY a ` +
+		'JSON array with one object per issue: {"title": string, "url": string, "ok": true} on success, ' +
+		'or {"title": string, "ok": false, "error": string} on failure. No preamble, no explanation, no ' +
+		'code fences.'
+	);
+}
+
+/** Strip ANSI, slice the first '[' … last ']', JSON.parse; [] if absent/malformed/non-array. */
+export function parseIssuesJson(raw: string): unknown[] {
+	const t = stripAnsi(raw);
+	const start = t.indexOf('[');
+	const end = t.lastIndexOf(']');
+	if (start < 0 || end < start) return [];
+	try { const p = JSON.parse(t.slice(start, end + 1)); return Array.isArray(p) ? p : []; }
+	catch { return []; }
+}
+
+/** Two one-shot headless `claude -p` calls (propose / create), input via temp file, tool-scoped.
+ *  `propose` is destination-agnostic (just splits the note into candidate issues); `create` takes
+ *  the chosen TrackerDestination so the MCP tool + target team/workspace/list come from user
+ *  config rather than being hardcoded to one specific service. */
+export class ConvertProbe {
+	private seq = 0;
+	constructor(private opts: ConvertProbeOpts) {}
+
+	private run(input: string, prompt: (p: string) => string, tool: string, timeoutMs: number): Promise<unknown[]> {
+		const tmp = path.join(this.opts.cwd, `.cos-convert-${Date.now()}-${this.seq++}.json`);
+		return new Promise<unknown[]>((resolve, reject) => {
+			try { fs.writeFileSync(tmp, input, 'utf8'); }
+			catch (e) { reject(e instanceof Error ? e : new Error('convert: temp write failed')); return; }
+			const cleanup = (): void => { try { fs.unlinkSync(tmp); } catch { /* gone */ } };
+			const bridge = new SessionBridge(
+				this.opts.sidecarPath, this.opts.cwd, 'claude',
+				['-p', prompt(tmp), '--output-format', 'text', '--allowedTools', tool], {},
+			);
+			let buf = '';
+			let done = false;
+			const finish = (fn: () => void): void => { if (done) return; done = true; window.clearTimeout(timer); cleanup(); fn(); };
+			const timer = window.setTimeout(() => finish(() => { bridge.kill(); reject(new Error('convert timed out')); }), timeoutMs);
+			bridge.onData((d) => { buf += d; });
+			bridge.onExit(() => finish(() => resolve(parseIssuesJson(buf))));
+			bridge.start();
+		});
+	}
+
+	async propose(noteText: string): Promise<ProposedIssue[]> {
+		if (noteText.trim() === '') return [];
+		const rows = await this.run(noteText, buildProposePrompt, 'Read', 60000);
+		return rows
+			.filter((r): r is ProposedIssue =>
+				!!r && typeof (r as ProposedIssue).title === 'string' && typeof (r as ProposedIssue).description === 'string')
+			.map((r) => ({ title: r.title, description: r.description }));
+	}
+
+	async create(issues: ProposedIssue[], dest: TrackerDestination): Promise<CreatedIssue[]> {
+		if (!issues.length) return [];
+		const rows = await this.run(JSON.stringify(issues), (p) => buildCreatePrompt(p, dest), dest.mcpTool, 120000);
+		return rows
+			.filter((r): r is Record<string, unknown> => !!r && typeof (r as Record<string, unknown>).title === 'string')
+			.map((r) => ({
+				title: String(r.title),
+				url: typeof r.url === 'string' ? r.url : undefined,
+				ok: r.ok === true,
+				error: typeof r.error === 'string' ? r.error : undefined,
+			}));
+	}
+}

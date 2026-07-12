@@ -7,6 +7,7 @@ import { UsageProbe } from './terminals/usage-probe';
 import { UsageWidget } from './ui/usage-widget';
 import { AttentionWidget } from './ui/attention-widget';
 import { WorkspaceBar } from './ui/workspace-bar';
+import { SettingsPanel } from './ui/settings-panel';
 import { normalizeWorkspaces, addWorkspace, closeWorkspace, nextActiveAfter, type Workspace } from './terminals/workspace-store';
 import * as path from 'path';
 
@@ -64,6 +65,7 @@ async function main(): Promise<void> {
 			bypassPermissions: true,
 			toast,
 			promptForTopic,
+			openSettings: () => void settingsPanel.open(appEl),
 		});
 		const gridFor = (id: string): TerminalsGrid => {
 			let g = grids.get(id);
@@ -80,6 +82,18 @@ async function main(): Promise<void> {
 		window.addEventListener('beforeunload', () => attention.dispose());
 
 		const phoneBtn = topBar.createEl('button', { cls: 'wcc-phone', text: '📱 Phone' });
+		const settingsBtn = topBar.createEl('button', { cls: 'wcc-settings-btn', text: '⚙ Settings' });
+
+		// ⚙ Settings button → panel to configure journal "Convert to…" destinations. Created early
+		// (before depsFor/grids) so GridDeps.openSettings can reference it.
+		const settingsPanel = new SettingsPanel({
+			addFolder: () => window.wcc.addFolder(),
+			getConfig: () => window.wcc.getConfig(),
+			setConfig: (c) => window.wcc.setConfig(c),
+			toast,
+		});
+		settingsBtn.addEventListener('click', () => { void settingsPanel.toggle(appEl); });
+
 
 		// --- workspace tab bar ---
 		const bar = new WorkspaceBar({
