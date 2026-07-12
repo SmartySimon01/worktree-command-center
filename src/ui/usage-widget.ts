@@ -1,7 +1,7 @@
 import { UsageProbe } from '../terminals/usage-probe';
 import type { UsageReadout } from '../terminals/usage-parse';
 
-const AUTO_MS = 60_000; // auto-refresh cadence when enabled
+const AUTO_MS = 300_000; // auto-refresh cadence when enabled (5 min)
 
 /** Topbar usage battery: session % + reset and weekly % inline; ⟳ manual refresh; an auto-
  *  refresh toggle; and a click-to-expand popover with session / week / credits detail. */
@@ -28,7 +28,7 @@ export class UsageWidget {
 		this.battEl.addEventListener('click', (e) => { e.stopPropagation(); this.togglePop(); });
 		this.sessionLabel = el.createSpan({ cls: 'wcc-usage-session', text: 'tap ⟳ for usage' });
 		this.weekLabel = el.createSpan({ cls: 'wcc-usage-week', text: '' });
-		this.autoBtn = el.createEl('button', { cls: 'wcc-usage-auto', text: '⏱', attr: { title: 'Auto-refresh every 60s (off)' } });
+		this.autoBtn = el.createEl('button', { cls: 'wcc-usage-auto', text: '⏱', attr: { title: 'Auto-refresh every 5 min (off)' } });
 		this.autoBtn.addEventListener('click', (e) => { e.stopPropagation(); this.toggleAuto(); });
 		this.refreshBtn = el.createEl('button', { cls: 'wcc-usage-refresh', text: '⟳', attr: { title: 'Refresh usage' } });
 		this.refreshBtn.addEventListener('click', (e) => { e.stopPropagation(); void this.refresh(); });
@@ -36,6 +36,7 @@ export class UsageWidget {
 		this.pop.style.display = 'none';
 		this.onDocClick = () => this.togglePop(false);
 		document.addEventListener('click', this.onDocClick);
+		this.toggleAuto(); // auto-refresh is on by default
 	}
 
 	private togglePop(force?: boolean): void {
@@ -97,7 +98,7 @@ export class UsageWidget {
 	private toggleAuto(): void {
 		this.auto = !this.auto;
 		this.autoBtn?.toggleClass('on', this.auto);
-		this.autoBtn?.setAttribute('title', `Auto-refresh every 60s (${this.auto ? 'on' : 'off'})`);
+		this.autoBtn?.setAttribute('title', `Auto-refresh every 5 min (${this.auto ? 'on' : 'off'})`);
 		if (this.autoTimer !== null) { window.clearInterval(this.autoTimer); this.autoTimer = null; }
 		if (this.auto) { void this.refresh(); this.autoTimer = window.setInterval(() => void this.refresh(), AUTO_MS); }
 	}
