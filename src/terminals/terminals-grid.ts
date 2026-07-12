@@ -10,7 +10,7 @@ import { BoardView } from './board-view';
 import { promptForConfirm } from '../ui/prompt-dialog';
 import { ChatRoom } from './chat-room';
 import { ChatTile } from './chat-tile';
-import { settledLayout, centeredLayout, keyForIndex, keyToIndex } from './bubble-layout';
+import { settledLayout, centeredLayout, keyForIndex, keyToIndex, physicalKeyLabel } from './bubble-layout';
 import { emptyState, applyKeystroke, onReady as rqReady, onSubmit as rqSubmit, onClose as rqClose, onClick as rqClick, cycleNext as rqCycleNext, cyclePrev as rqCyclePrev } from './ready-queue';
 import { decideCenter, type SpotlightState } from './focus-decider';
 import { partitionByHidden } from './session-partition';
@@ -271,9 +271,11 @@ export class TerminalsGrid {
 			if (!e.altKey) return;
 			if (e.key === 'ArrowRight') { e.preventDefault(); const r = rqCycleNext(this.q); this.q = r.state; if (r.center !== null) this.doCenter(r.center); return; }
 			if (e.key === 'ArrowLeft') { e.preventDefault(); const r = rqCyclePrev(this.q); this.q = r.state; if (r.center !== null) this.doCenter(r.center); return; }
-			if (e.key === 'l' || e.key === 'L') { e.preventDefault(); if (this.centeredId !== null) this.toggleLockById(this.centeredId); return; }
-			const norm = e.key.length === 1 ? e.key.toUpperCase() : e.key;
-			const idx = keyToIndex(norm);
+			// .code (physical key), not .key: Option composes most letters into accented/special
+			// characters on macOS (Option+L -> "\u00ac", not "l"/"L"), so .key alone breaks these
+			// on Mac. See physicalKeyLabel's doc comment.
+			if (e.code === 'KeyL') { e.preventDefault(); if (this.centeredId !== null) this.toggleLockById(this.centeredId); return; }
+			const idx = keyToIndex(physicalKeyLabel(e));
 			if (idx !== null && this.tiles[idx]) { e.preventDefault(); this.handleClick(this.tiles[idx]!.tileId); }
 		};
 		this.keyup = (e: KeyboardEvent) => { if (e.key === 'Alt') { this.stageEl?.toggleClass('alt-on', false); this.tiles.forEach((t) => t.setBadge(null)); } };

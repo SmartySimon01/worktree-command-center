@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { settledLayout, centeredLayout, keyForIndex, keyToIndex } from '../src/terminals/bubble-layout';
+import { settledLayout, centeredLayout, keyForIndex, keyToIndex, physicalKeyLabel } from '../src/terminals/bubble-layout';
 
 describe('settledLayout', () => {
 	it('lays N tiles in an adaptive grid, all within bounds', () => {
@@ -66,5 +66,26 @@ describe('keyForIndex / keyToIndex', () => {
 		for (let i = 0; i < 16; i++) expect(keyToIndex(keyForIndex(i))).toBe(i);
 		expect(keyToIndex('F13')).toBeNull();
 		expect(keyToIndex('1')).toBeNull();
+	});
+});
+
+describe('physicalKeyLabel', () => {
+	it('prefers .code for plain letters, unaffected by what .key composed', () => {
+		expect(physicalKeyLabel({ key: 'a', code: 'KeyA' })).toBe('A');
+		expect(physicalKeyLabel({ key: 'l', code: 'KeyL' })).toBe('L');
+	});
+	it('uses .code even when macOS Option composed .key into an accented/special character', () => {
+		// Real Chromium/macOS behavior: Option+L reports key="¬", Option+C reports key="ç" — the
+		// bug this function exists to route around (Option+<letter> shortcuts were unusable).
+		expect(physicalKeyLabel({ key: '¬', code: 'KeyL' })).toBe('L');
+		expect(physicalKeyLabel({ key: 'ç', code: 'KeyC' })).toBe('C');
+		expect(physicalKeyLabel({ key: 'å', code: 'KeyA' })).toBe('A');
+	});
+	it('leaves function keys as-is (.key, not subject to Option composition)', () => {
+		expect(physicalKeyLabel({ key: 'F1', code: 'F1' })).toBe('F1');
+		expect(physicalKeyLabel({ key: 'F12', code: 'F12' })).toBe('F12');
+	});
+	it('falls back to .key for anything without a KeyX code (e.g. digits, punctuation)', () => {
+		expect(physicalKeyLabel({ key: '1', code: 'Digit1' })).toBe('1');
 	});
 });

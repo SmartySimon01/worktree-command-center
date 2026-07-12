@@ -82,3 +82,17 @@ export function keyToIndex(key: string): number | null {
 	if (/^[A-Z]$/.test(key)) return 12 + (key.charCodeAt(0) - 65);
 	return null;
 }
+
+/** Normalize a KeyboardEvent into the label keyToIndex expects — "F1".."F12" or a bare letter.
+ *  Deliberately prefers `.code` (physical key position, e.g. "KeyL") over `.key` for letters:
+ *  on macOS, holding Option/Alt COMPOSES most letters into accented/special characters via
+ *  `.key` (Option+L -> "¬", Option+C -> "ç", …) since that's the same modifier the OS uses for
+ *  dead-key input — `.key` alone is unusable for an Alt+<letter> shortcut on Mac. `.code` is
+ *  layout- and modifier-independent, so it survives regardless of what Option composed. Function
+ *  keys aren't subject to this (no accent composition on F1-F12), so `.key` is fine for those. */
+export function physicalKeyLabel(e: { key: string; code: string }): string {
+	if (/^F\d{1,2}$/.test(e.key)) return e.key;
+	const m = /^Key([A-Z])$/.exec(e.code);
+	if (m) return m[1]!;
+	return e.key.length === 1 ? e.key.toUpperCase() : e.key;
+}
