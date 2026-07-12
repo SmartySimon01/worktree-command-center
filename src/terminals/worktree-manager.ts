@@ -78,6 +78,28 @@ export async function writeReadyHook(worktreePath: string, notifyScriptAbsPath: 
 	await fsp.writeFile(path.join(dir, 'settings.local.json'), settingsLocalJson(notifyScriptAbsPath, coordHookAbsPath), 'utf8');
 }
 
+/** Keep `.claude/settings.local.json` — the file WE write into every worktree via
+ *  writeReadyHook — out of `git status`, the same way writeContextFile keeps its file outside
+ *  the worktree entirely: it's our own bookkeeping, not the user's work, so it shouldn't make a
+ *  freshly-created, untouched worktree read as "dirty". Uses `.git/info/exclude` (shared across
+ *  all worktrees of a repo, local-only, never committed) rather than the repo's own .gitignore,
+ *  so this never touches a tracked file. Idempotent — checked before appending. Best-effort:
+ *  a failure here just means the worktree shows as dirty until fixed, never blocks creation. */
+export async function ensureClaudeSettingsIgnored(repoPath: string): Promise<void> {
+	try {
+		const gitDir = await runCommand('git', ['rev-parse', '--git-common-dir'], { cwd: repoPath, timeoutMs: 8000 });
+		if (gitDir.code !== 0) return;
+		const excludePath = path.join(path.resolve(repoPath, gitDir.stdout.trim()), 'info', 'exclude');
+		const entry = '.claude/settings.local.json';
+		let existing = '';
+		try { existing = await fsp.readFile(excludePath, 'utf8'); } catch { /* doesn't exist yet */ }
+		if (existing.split('\n').some((l) => l.trim() === entry)) return;
+		await fsp.mkdir(path.dirname(excludePath), { recursive: true });
+		const sep = existing.length > 0 && !existing.endsWith('\n') ? '\n' : '';
+		await fsp.appendFile(excludePath, `${sep}${entry}\n`, 'utf8');
+	} catch { /* best effort */ }
+}
+
 /** Create a fresh worktree on a NEW branch based on baseBranch. Throws on git failure. */
 export async function createWorktree(
 	repoPath: string, repoName: string, baseBranch: string, branch: string, notifyScriptAbsPath?: string, coordHookAbsPath?: string,
@@ -90,6 +112,7 @@ export async function createWorktree(
 	if (notifyScriptAbsPath && coordHookAbsPath) {
 		try { await writeReadyHook(worktreePath, notifyScriptAbsPath, coordHookAbsPath); } catch { /* hooks are best-effort */ }
 	}
+	await ensureClaudeSettingsIgnored(repoPath);
 	return { worktreePath, branch };
 }
 

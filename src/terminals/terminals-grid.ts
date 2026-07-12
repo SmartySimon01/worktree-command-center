@@ -2,7 +2,7 @@ import { spawn } from 'child_process';
 import * as fs from 'fs/promises';
 import * as fsSync from 'fs';
 import * as path from 'path';
-import { listBranches, createWorktree, writeReadyHook, defaultBranch, parkWorktree, reopenWorktree, type WorktreeInfo } from './worktree-manager';
+import { listBranches, createWorktree, writeReadyHook, ensureClaudeSettingsIgnored, defaultBranch, parkWorktree, reopenWorktree, type WorktreeInfo } from './worktree-manager';
 import { nextWorktreeBranch, parseWorktreeList, parseStatusPorcelain, parseAheadBehind, isParkCommitSubject, formatRegistryMarkdown, type WorktreeEntry } from './worktree-registry';
 import { runCommand } from '../command-runner';
 import { TerminalTile } from './terminal-tile';
@@ -73,6 +73,7 @@ export class TerminalsGrid {
 	private nextTileId = 1;
 	private pendingNewBranch: string | null = null;
 	private lastEntries: WorktreeEntry[] = [];
+	private claudeSettingsIgnoredFor = new Set<string>(); // repo paths already patched into .git/info/exclude
 	private centeredId: number | null = null;
 	private maximized = false;
 	private locked = false;
@@ -1033,6 +1034,10 @@ export class TerminalsGrid {
 		const entries: WorktreeEntry[] = [];
 		const now = Date.now();
 		for (const repo of this.repos) {
+			if (!this.claudeSettingsIgnoredFor.has(repo.path)) {
+				this.claudeSettingsIgnoredFor.add(repo.path);
+				await ensureClaudeSettingsIgnored(repo.path); // before git status below, so this scan already reflects it
+			}
 			const wl = await runCommand('git', ['worktree', 'list', '--porcelain'], { cwd: repo.path, timeoutMs: 8000 });
 			if (wl.code !== 0) continue;
 			for (const wt of parseWorktreeList(wl.stdout)) {
