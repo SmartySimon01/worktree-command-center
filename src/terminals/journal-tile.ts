@@ -1,8 +1,9 @@
 import { JournalStore } from './journal-store';
-import { promptForConfirm } from '../ui/prompt-dialog';
+import { promptForConfirm, promptForChoice } from '../ui/prompt-dialog';
 import type { StageTile } from './stage-tile';
 import { openExternalUrl } from './links';
-import type { ProposedIssue, CreatedIssue } from './linear-convert-probe';
+import type { ProposedIssue, CreatedIssue } from './convert-probe';
+import type { ConvertDestination, TrackerDestination, VaultDestination } from './convert-destinations';
 
 export interface JournalTileOpts {
   tileId: number;
@@ -18,8 +19,11 @@ export interface JournalTileOpts {
   onRename: () => void;
   toast: (msg: string) => void;
   onFormat: (text: string) => Promise<string>;
+  onGetDestinations: () => Promise<ConvertDestination[]>;
   onConvertPropose: (text: string) => Promise<ProposedIssue[]>;
-  onConvertCreate: (issues: ProposedIssue[]) => Promise<CreatedIssue[]>;
+  onConvertCreate: (issues: ProposedIssue[], dest: TrackerDestination) => Promise<CreatedIssue[]>;
+  onConvertSaveToVault: (dest: VaultDestination, title: string, body: string) => Promise<{ ok: boolean; path?: string; error?: string }>;
+  onOpenSettings: () => void;
 }
 
 /** A stage tile holding free-form notes (a textarea), not a Claude session. Saves to the
@@ -79,8 +83,8 @@ export class JournalTile implements StageTile {
     this.historyBtn.addEventListener('click', (e) => { e.stopPropagation(); this.toggleHistory(); });
     this.fmtBtn = actions.createEl('button', { text: 'Format', cls: 'cos-journal-fmt', attr: { title: 'Reformat with Claude — fixes indentation, keeps your words' } }) as HTMLButtonElement;
     this.fmtBtn.addEventListener('click', (e) => { e.stopPropagation(); void this.format(); });
-    this.convertBtn = actions.createEl('button', { text: 'Convert to Linear', cls: 'cos-journal-convert-btn', attr: { title: 'Propose Linear issues from this note' } }) as HTMLButtonElement;
-    this.convertBtn.addEventListener('click', (e) => { e.stopPropagation(); void this.convertToLinear(); });
+    this.convertBtn = actions.createEl('button', { text: 'Convert to…', cls: 'cos-journal-convert-btn', attr: { title: 'Send this note to a configured destination (task tracker or notes vault)' } }) as HTMLButtonElement;
+    this.convertBtn.addEventListener('click', (e) => { e.stopPropagation(); void this.convertTo(); });
   }
 
   private renderEditor(): void {
@@ -181,20 +185,52 @@ export class JournalTile implements StageTile {
       .addEventListener('click', (e) => { e.stopPropagation(); this.setFooterDisabled(false); this.renderEditor(); });
   }
 
-  private async convertToLinear(): Promise<void> {
+  private async convertTo(): Promise<void> {
     const text = this.textarea?.value ?? this.currentText;
     if (text.trim() === '') { this.opts.toast('Nothing to convert'); return; }
     this.currentText = text;
+
+    const destinations = await this.opts.onGetDestinations();
+    if (!destinations.length) {
+      this.opts.toast('No destinations configured yet — opening Settings…');
+      this.opts.onOpenSettings();
+      return;
+    }
+    let dest: ConvertDestination;
+    if (destinations.length === 1) {
+      dest = destinations[0]!;
+    } else {
+      const choice = await promptForChoice('Convert to…', 'Pick a destination:',
+        destinations.map((d) => ({ id: d.id, label: d.label, sublabel: d.kind === 'tracker' ? d.target : d.vaultPath })));
+      if (!choice) return;
+      const picked = destinations.find((d) => d.id === choice);
+      if (!picked) return;
+      dest = picked;
+    }
+
+    if (dest.kind === 'vault') await this.convertToVault(dest, text);
+    else await this.convertToTracker(dest, text);
+  }
+
+  private async convertToVault(dest: VaultDestination, text: string): Promise<void> {
+    this.setFooterDisabled(true);
+    const res = await this.opts.onConvertSaveToVault(dest, this.displayName, text);
+    this.setFooterDisabled(false);
+    if (res.ok) this.opts.toast(`Saved to ${dest.label}${res.path ? ` — ${res.path}` : ''}`);
+    else this.opts.toast(`Couldn't save to ${dest.label}${res.error ? `: ${res.error}` : ''}`);
+  }
+
+  private async convertToTracker(dest: TrackerDestination, text: string): Promise<void> {
     this.setFooterDisabled(true);
     if (this.bodyEl) { this.bodyEl.empty(); this.bodyEl.createDiv({ cls: 'cos-journal-formatting', text: 'Analyzing note…' }); }
     let proposed: ProposedIssue[];
     try { proposed = await this.opts.onConvertPropose(text); }
     catch { this.opts.toast('Convert failed'); this.renderEditor(); this.setFooterDisabled(false); return; }
     if (!proposed.length) { this.opts.toast("Couldn't read a proposed split"); this.renderEditor(); this.setFooterDisabled(false); return; }
-    this.renderConvertPreview(proposed);
+    this.renderConvertPreview(proposed, dest);
   }
 
-  private renderConvertPreview(proposed: ProposedIssue[]): void {
+  private renderConvertPreview(proposed: ProposedIssue[], dest: TrackerDestination): void {
     if (!this.bodyEl) return;
     this.bodyEl.empty();
     const checked = proposed.map(() => true);
@@ -216,16 +252,16 @@ export class JournalTile implements StageTile {
       createBtn.disabled = n === 0;
     };
     updateBtn();
-    createBtn.addEventListener('click', (e) => { e.stopPropagation(); void this.doCreate(proposed.filter((_, i) => checked[i])); });
+    createBtn.addEventListener('click', (e) => { e.stopPropagation(); void this.doCreate(proposed.filter((_, i) => checked[i]), dest); });
     bar.createEl('button', { text: 'Discard' })
       .addEventListener('click', (e) => { e.stopPropagation(); this.setFooterDisabled(false); this.renderEditor(); });
   }
 
-  private async doCreate(issues: ProposedIssue[]): Promise<void> {
-    if (this.bodyEl) { this.bodyEl.empty(); this.bodyEl.createDiv({ cls: 'cos-journal-formatting', text: 'Creating in Linear…' }); }
+  private async doCreate(issues: ProposedIssue[], dest: TrackerDestination): Promise<void> {
+    if (this.bodyEl) { this.bodyEl.empty(); this.bodyEl.createDiv({ cls: 'cos-journal-formatting', text: `Creating in ${dest.label}…` }); }
     let results: CreatedIssue[];
-    try { results = await this.opts.onConvertCreate(issues); }
-    catch { this.opts.toast('Create timed out — check Linear'); this.renderEditor(); this.setFooterDisabled(false); return; }
+    try { results = await this.opts.onConvertCreate(issues, dest); }
+    catch { this.opts.toast(`Create timed out — check ${dest.label}`); this.renderEditor(); this.setFooterDisabled(false); return; }
     this.renderConvertResult(results);
   }
 

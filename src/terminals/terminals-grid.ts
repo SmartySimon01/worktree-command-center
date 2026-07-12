@@ -24,7 +24,8 @@ import { classifyAttention, type AttentionItem } from './attention';
 import { JournalTile } from './journal-tile';
 import { JournalStore } from './journal-store';
 import { FormatProbe } from './format-probe';
-import { LinearConvertProbe } from './linear-convert-probe';
+import { ConvertProbe } from './convert-probe';
+import { vaultNoteFilename, vaultNoteContent, type ConvertDestination, type VaultDestination } from './convert-destinations';
 import type { StageTile } from './stage-tile';
 
 export interface RepoConfig { name: string; path: string; remote?: string; group?: string; }
@@ -41,6 +42,7 @@ export interface GridDeps {
 	bypassPermissions: boolean;
 	toast: (msg: string) => void;
 	promptForTopic: (title: string, placeholder: string, initial?: string, okLabel?: string) => Promise<string | null>;
+	openSettings: () => void;
 }
 interface SessionRecord { worktreePath: string; branch: string; repoName: string; repoPath: string; baseBranch: string; name?: string; hidden?: boolean; kind?: 'terminal' | 'journal'; journalSlug?: string; }
 
@@ -70,7 +72,7 @@ export class TerminalsGrid {
 	private hidden: StageTile[] = [];
 	private journalStore!: JournalStore;
 	private formatProbe!: FormatProbe;
-	private linearProbe!: LinearConvertProbe;
+	private convertProbe!: ConvertProbe;
 	private journalSeq = 0;
 	private nextTileId = 1;
 	private pendingNewBranch: string | null = null;
@@ -123,7 +125,28 @@ export class TerminalsGrid {
 		this.coordHookPath = deps.coordHookPath;
 		this.journalStore = new JournalStore(path.join(this.coordDir, 'journals'));
 		this.formatProbe = new FormatProbe({ sidecarPath: this.sidecarPath, cwd: this.coordDir });
-		this.linearProbe = new LinearConvertProbe({ sidecarPath: this.sidecarPath, cwd: this.coordDir });
+		this.convertProbe = new ConvertProbe({ sidecarPath: this.sidecarPath, cwd: this.coordDir });
+	}
+
+	/** Journal destinations configured in Settings (app-wide, not scoped to this workspace/group). */
+	private async getConvertDestinations(): Promise<ConvertDestination[]> {
+		const cfg = await window.wcc.getConfig();
+		return Array.isArray(cfg.convertDestinations) ? cfg.convertDestinations : [];
+	}
+
+	/** "Convert to" a vault destination: no Claude/MCP involved, just write the note as a new
+	 *  markdown file. Filename de-duped against whatever's already in the folder. */
+	private async saveToVault(dest: VaultDestination, title: string, body: string): Promise<{ ok: boolean; path?: string; error?: string }> {
+		try {
+			await fs.mkdir(dest.vaultPath, { recursive: true });
+			const existing = await fs.readdir(dest.vaultPath).catch(() => [] as string[]);
+			const filename = vaultNoteFilename(title, new Date(), existing);
+			const filePath = path.join(dest.vaultPath, filename);
+			await fs.writeFile(filePath, vaultNoteContent(title, body), 'utf8');
+			return { ok: true, path: filePath };
+		} catch (e) {
+			return { ok: false, error: e instanceof Error ? e.message : String(e) };
+		}
 	}
 
 	/** Mount the grid into a page container. Sessions PERSIST across mounts (tab switches):
@@ -388,8 +411,11 @@ export class TerminalsGrid {
 			},
 			onRename: () => { void this.persist(); },
 			onFormat: (text) => this.formatProbe.format(text),
-			onConvertPropose: (text) => this.linearProbe.propose(text),
-			onConvertCreate: (issues) => this.linearProbe.create(issues),
+			onGetDestinations: () => this.getConvertDestinations(),
+			onConvertPropose: (text) => this.convertProbe.propose(text),
+			onConvertCreate: (issues, dest) => this.convertProbe.create(issues, dest),
+			onConvertSaveToVault: (dest, title, body) => this.saveToVault(dest, title, body),
+			onOpenSettings: () => this.deps.openSettings(),
 		});
 		if (this.stageEl) tile.render(this.stageEl);
 		this.tiles.push(tile);
@@ -1086,8 +1112,11 @@ export class TerminalsGrid {
 					onRequestRename: (t, cur) => { void this.deps.promptForTopic('Rename journal', 'New name', cur, 'Rename').then((n) => { if (n && n.trim()) { t.setName(n.trim()); void this.persist(); } }); },
 					onRename: () => { void this.persist(); },
 					onFormat: (text) => this.formatProbe.format(text),
-					onConvertPropose: (text) => this.linearProbe.propose(text),
-					onConvertCreate: (issues) => this.linearProbe.create(issues),
+					onGetDestinations: () => this.getConvertDestinations(),
+					onConvertPropose: (text) => this.convertProbe.propose(text),
+					onConvertCreate: (issues, dest) => this.convertProbe.create(issues, dest),
+					onConvertSaveToVault: (dest, title, body) => this.saveToVault(dest, title, body),
+					onOpenSettings: () => this.deps.openSettings(),
 				});
 				if (this.stageEl) tile.render(this.stageEl);
 				if (rec.hidden) { tile.setHidden(true); this.hidden.push(tile); } else { this.tiles.push(tile); }
