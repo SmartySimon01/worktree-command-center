@@ -39,7 +39,7 @@ export class GodConsole {
 	render(parent: HTMLElement): void {
 		this.el = parent.createDiv({ cls: 'cos-god-panel' });
 		const head = this.el.createDiv({ cls: 'cos-god-head' });
-		head.createSpan({ text: '🜲 Able' });
+		head.createSpan({ text: '⚒ Able' });
 		const refreshBtn = head.createEl('button', { text: '⟳', cls: 'cos-term-refresh', attr: { title: 'Refresh Able — reload with --continue (keeps the conversation)' } });
 		refreshBtn.addEventListener('click', (e) => { e.stopPropagation(); void this.refresh(); });
 		const hide = head.createEl('button', { text: '×', attr: { title: 'Hide Able (session keeps running)' } });

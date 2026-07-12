@@ -163,7 +163,7 @@ export class TerminalsGrid {
 		// this.selectBtn = controls.createEl('button', { text: '⊕ Select' });
 		// this.selectBtn.addEventListener('click', () => this.setSelecting(!this.selecting));
 
-		this.godBtn = controls.createEl('button', { text: '🜲 Able', cls: 'cos-god-btn' });
+		this.godBtn = controls.createEl('button', { text: '⚒ Able', cls: 'cos-god-btn' });
 		this.godBtn.setAttribute('title', 'Open the Able overseer console — sees the whole floor, acts on request');
 		this.godBtn.addEventListener('click', () => this.toggleGod());
 
