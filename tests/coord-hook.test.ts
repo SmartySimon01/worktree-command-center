@@ -40,3 +40,25 @@ describe('coord-hook', () => {
     expect(fs.existsSync(path.join(dir, 'locks'))).toBe(false);
   });
 });
+
+describe('coord-hook --task', () => {
+  it('logs a START board event on PreToolUse, keyed by tileId + tool_use_id', () => {
+    const out = run({ tool_name: 'Task', tool_input: { description: 'audit auth' }, tool_use_id: 'abc123' }, ['--task'], '5');
+    expect(out.trim()).toBe('');
+    const board = fs.readFileSync(path.join(dir, 'board.md'), 'utf8').trim();
+    expect(board).toContain('task:5:abc123');
+    expect(board).toContain('START');
+    expect(board).toContain('audit auth');
+  });
+  it('logs a matching DONE board event on PostToolUse (--task --release)', () => {
+    run({ tool_name: 'Task', tool_input: { description: 'audit auth' }, tool_use_id: 'abc123' }, ['--task'], '5');
+    run({ tool_name: 'Task', tool_use_id: 'abc123' }, ['--task', '--release'], '5');
+    const lines = fs.readFileSync(path.join(dir, 'board.md'), 'utf8').trim().split('\n');
+    expect(lines[lines.length - 1]).toContain('task:5:abc123');
+    expect(lines[lines.length - 1]).toContain('DONE');
+  });
+  it('does not create a lock (tasks never contend)', () => {
+    run({ tool_name: 'Task', tool_input: { description: 'audit auth' }, tool_use_id: 'abc123' }, ['--task'], '5');
+    expect(fs.existsSync(path.join(dir, 'locks'))).toBe(false);
+  });
+});

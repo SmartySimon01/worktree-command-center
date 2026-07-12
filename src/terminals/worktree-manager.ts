@@ -60,14 +60,17 @@ export async function listBranches(repoPath: string): Promise<string[]> {
 }
 
 /** The .claude/settings.local.json content: the .cos-ready marker hook (Stop/Notification),
- *  the coordination hooks (PreToolUse acquire / PostToolUse release) on Bash, and a
- *  pre-approval of `cos-coord` so agents chat/coordinate with each other without prompting. */
+ *  the coordination hooks (PreToolUse acquire / PostToolUse release) on Bash, a Task-matcher
+ *  hook that logs background Task/Agent runs to the board (for the Coordination panel's
+ *  background-tasks list), and a pre-approval of `cos-coord` so agents chat/coordinate with
+ *  each other without prompting. */
 export function settingsLocalJson(notifyScriptAbsPath: string, coordHookAbsPath: string): string {
 	const ready = [{ hooks: [{ type: 'command', command: `node "${notifyScriptAbsPath}"` }] }];
-	const coord = (extra: string) => [{ matcher: 'Bash', hooks: [{ type: 'command', command: `node "${coordHookAbsPath}"${extra}` }] }];
+	const coord = (extra: string) => ({ matcher: 'Bash', hooks: [{ type: 'command', command: `node "${coordHookAbsPath}"${extra}` }] });
+	const task = (extra: string) => ({ matcher: 'Task', hooks: [{ type: 'command', command: `node "${coordHookAbsPath}" --task${extra}` }] });
 	return JSON.stringify({
 		permissions: { allow: ['Bash(cos-coord:*)'] }, // chatting/coordinating never needs approval
-		hooks: { Stop: ready, Notification: ready, PreToolUse: coord(''), PostToolUse: coord(' --release') },
+		hooks: { Stop: ready, Notification: ready, PreToolUse: [coord(''), task('')], PostToolUse: [coord(' --release'), task(' --release')] },
 	}, null, 2);
 }
 

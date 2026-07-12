@@ -79,4 +79,15 @@ describe('settingsLocalJson', () => {
 		};
 		expect(cfg.permissions.allow).toContain('Bash(cos-coord:*)');
 	});
+	it('also registers a Task-matcher hook that logs background task events', () => {
+		const cfg = JSON.parse(settingsLocalJson('C:/p/notify-ready.cjs', 'C:/p/coord-hook.cjs')) as {
+			hooks: Record<string, Array<{ matcher?: string; hooks: Array<{ command: string }> }>>;
+		};
+		const preTask = cfg.hooks.PreToolUse.find((g) => g.matcher === 'Task');
+		expect(preTask?.hooks[0]!.command).toContain('coord-hook.cjs');
+		expect(preTask?.hooks[0]!.command).toContain('--task');
+		const postTask = cfg.hooks.PostToolUse.find((g) => g.matcher === 'Task');
+		expect(postTask?.hooks[0]!.command).toContain('--task');
+		expect(postTask?.hooks[0]!.command).toContain('--release');
+	});
 });

@@ -259,7 +259,9 @@ export class GodConsole {
 	/** Drop a project-level `/personality` slash command + a scoped settings file into Able's
 	 *  home dir. The command makes Able run `cos-coord personality` (the app drains it and flips
 	 *  the mode); the settings pre-allow `cos-coord` so the toggle/tell/watch/spawn don't each
-	 *  pop a permission prompt. Everything else still prompts (Able stays non-bypass). */
+	 *  pop a permission prompt, and log Able's own background Task/Agent runs to the board (tileId
+	 *  0, matching COS_TERMINAL_ID) so they show up in the Coordination panel like everyone else's.
+	 *  Everything else still prompts (Able stays non-bypass). */
 	private writeAbleCommands(): void {
 		try {
 			const cmdDir = path.join(this.opts.godHomeDir, '.claude', 'commands');
@@ -278,8 +280,13 @@ export class GodConsole {
 				'stops the periodic floor "[pulse]" nudges. Do not do anything else.',
 				'',
 			].join('\n'), 'utf8');
+			const coordHookAbsPath = path.join(path.dirname(this.opts.sidecarPath), 'coord-hook.cjs');
+			const task = (extra: string) => ({ matcher: 'Task', hooks: [{ type: 'command', command: `node "${coordHookAbsPath}" --task${extra}` }] });
 			const settingsFile = path.join(this.opts.godHomeDir, '.claude', 'settings.json');
-			fs.writeFileSync(settingsFile, JSON.stringify({ permissions: { allow: ['Bash(cos-coord:*)'] } }, null, 2), 'utf8');
+			fs.writeFileSync(settingsFile, JSON.stringify({
+				permissions: { allow: ['Bash(cos-coord:*)'] },
+				hooks: { PreToolUse: [task('')], PostToolUse: [task(' --release')] },
+			}, null, 2), 'utf8');
 		} catch { /* best effort — /personality still works, just with a permission prompt */ }
 	}
 

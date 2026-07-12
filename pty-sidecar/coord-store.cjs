@@ -85,6 +85,13 @@ function note(dir, terminal, message) {
   appendBoard(dir, { ts: Date.now(), terminal, resource: '-', status: 'NOTE', detail: message });
 }
 
+// Background Task/Agent tool lifecycle: resource encodes `task:<tileId>:<taskId>` so the
+// dashboard can derive "currently running" (a START with no later DONE for that key) and
+// resolve which tile to focus on click, purely from the existing board.md feed.
+function taskEvent(dir, terminal, tileId, taskId, status, detail) {
+  appendBoard(dir, { ts: Date.now(), terminal, resource: `task:${tileId}:${taskId}`, status, detail: detail || '-' });
+}
+
 function appendChat(dir, terminal, message) {
   fs.mkdirSync(dir, { recursive: true });
   fs.appendFileSync(path.join(dir, 'chat.md'), core.formatChatLine({ ts: Date.now(), terminal, message }), 'utf8');
@@ -108,4 +115,4 @@ function watch(dir, target, note) { return dropOutbox(dir, { kind: 'watch', targ
 function spawn(dir, repo, base, task) { return dropOutbox(dir, { kind: 'spawn', repo, base: base || null, task }); }
 function personality(dir) { return dropOutbox(dir, { kind: 'personality' }); }
 
-module.exports = { acquire, release, readLocks, readHolder, appendBoard, note, appendChat, tell, watch, spawn, personality, dropOutbox, sleepSync };
+module.exports = { acquire, release, readLocks, readHolder, appendBoard, note, taskEvent, appendChat, tell, watch, spawn, personality, dropOutbox, sleepSync };

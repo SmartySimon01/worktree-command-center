@@ -185,6 +185,7 @@ export class TerminalsGrid {
 			() => this.hidden.map((t) => ({ tileId: t.tileId, name: t.name, branch: t.branch, repo: t.repoName })),
 			(tileId) => this.showTile(tileId),
 			(tileId) => void this.closeHiddenTile(tileId),
+			(tileId) => (tileId === 0 ? this.focusGod() : this.revealTile(tileId)),
 		);
 		this.board.mount(parent);
 
@@ -664,6 +665,13 @@ export class TerminalsGrid {
 		this.startFloorFeed();
 		this.godBtn?.toggleClass('cos-god-on', true);
 		this.applyLayout();
+	}
+
+	/** Ensure Able's panel is open + focused — used by the Coordination panel's background-tasks
+	 *  list to jump to Able's own runs (tileId 0, which isn't a real tile in `this.tiles`). */
+	private focusGod(): void {
+		if (!this.godConsole || !this.godVisible) this.toggleGod();
+		this.godConsole?.focus();
 	}
 
 	private hideGod(): void {

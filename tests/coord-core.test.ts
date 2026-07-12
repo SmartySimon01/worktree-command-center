@@ -49,3 +49,18 @@ describe('board line round-trip', () => {
     expect(merged.map((e) => e.ts)).toEqual([3, 2, 1]);
   });
 });
+
+describe('taskLabel', () => {
+  it('prefers description, falls back to a truncated prompt, then subagent_type', () => {
+    expect(core.taskLabel({ description: 'audit auth middleware' })).toBe('audit auth middleware');
+    expect(core.taskLabel({ prompt: 'do the thing' })).toBe('do the thing');
+    expect(core.taskLabel({ subagent_type: 'Explore' })).toBe('Explore');
+    expect(core.taskLabel({})).toBe('task');
+  });
+  it('truncates long prompts to 80 chars with an ellipsis', () => {
+    const long = 'x'.repeat(200);
+    const label = core.taskLabel({ prompt: long });
+    expect(label.length).toBe(81); // 80 chars + ellipsis
+    expect(label.endsWith('…')).toBe(true);
+  });
+});

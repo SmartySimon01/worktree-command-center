@@ -61,6 +61,16 @@ describe('coord-store', () => {
     expect(files).toHaveLength(1); // no leftover .tmp
   });
 
+  it('taskEvent appends a task:<tileId>:<taskId> board line, no lock', () => {
+    store.taskEvent(dir, 't5', 5, 'abc123', 'START', 'audit auth');
+    const board = fs.readFileSync(path.join(dir, 'board.md'), 'utf8').trim();
+    const e = core.parseBoardLine(board);
+    expect(e.resource).toBe('task:5:abc123');
+    expect(e.status).toBe('START');
+    expect(e.detail).toBe('audit auth');
+    expect(fs.existsSync(path.join(dir, 'locks'))).toBe(false);
+  });
+
   it('watch + spawn drop tagged outbox files', () => {
     store.watch(dir, 'Improver 1', 'run tests after');
     store.spawn(dir, 'app', 'main', 'do X');

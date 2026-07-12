@@ -63,6 +63,16 @@ function mergeEvents(events) {
   return events.slice().sort((a, b) => (b.ts || 0) - (a.ts || 0));
 }
 
+// Short human label for a Task/Agent tool call, used on background-task board events.
+function taskLabel(toolInput) {
+  const ti = toolInput || {};
+  const d = String(ti.description || '').trim();
+  if (d) return d.slice(0, 80);
+  const p = String(ti.prompt || '').trim().replace(/\s+/g, ' ');
+  if (p) return p.length > 80 ? p.slice(0, 80) + '…' : p;
+  return String(ti.subagent_type || 'task');
+}
+
 function formatChatLine(e) {
   const msg = String(e.message == null ? '' : e.message).replace(/[\t\r\n]+/g, ' ');
   return [e.ts, e.terminal, msg].join(SEP) + '\n';
@@ -81,6 +91,6 @@ function parseChatLine(line) {
 module.exports = {
   WAIT_MS, POLL_MS, CLI_TTL_MS, GIT_TTL_MS, SEP,
   slug, parseGitOp, baseName, resolveTargetPath, gitResource,
-  lockStatus, formatBoardLine, parseBoardLine, mergeEvents,
+  lockStatus, formatBoardLine, parseBoardLine, mergeEvents, taskLabel,
   formatChatLine, parseChatLine,
 };

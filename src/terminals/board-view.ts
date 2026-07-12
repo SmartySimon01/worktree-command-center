@@ -2,6 +2,15 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { parseBoardLine, lockStatus, mergeEvents, isEvent, POLL_MS, type BoardEvent, type RawLine, type LockHolder } from './coordination';
 
+/** A background Task/Agent run derived from board.md: a `task:<tileId>:<taskId>` resource
+ *  whose latest event is still START (no matching DONE has landed yet). */
+interface BgTask { tileId: number; terminal: string; label: string; startTs: number }
+
+function fmtAge(ms: number): string {
+	const s = Math.max(0, Math.round(ms / 1000));
+	return s < 90 ? `${s}s` : `${Math.round(s / 60)}m`;
+}
+
 /** A collapsible panel showing the group's active locks + recent board feed, polled live. */
 export class BoardView {
 	private el: HTMLElement | null = null;
@@ -9,6 +18,7 @@ export class BoardView {
 	private locksEl: HTMLElement | null = null;
 	private feedEl: HTMLElement | null = null;
 	private hiddenEl: HTMLElement | null = null;
+	private bgEl: HTMLElement | null = null;
 	private timer: number | null = null;
 
 	constructor(
@@ -17,6 +27,7 @@ export class BoardView {
 		private hiddenProvider: () => Array<{ tileId: number; name: string; branch: string; repo: string }> = () => [],
 		private onShow: (tileId: number) => void = () => {},
 		private onClose: (tileId: number) => void = () => {},
+		private onFocusTile: (tileId: number) => void = () => {},
 	) {}
 
 	mount(parent: HTMLElement): void {
@@ -25,6 +36,7 @@ export class BoardView {
 		head.addEventListener('click', () => this.el?.toggleClass('collapsed', !this.el.classList.contains('collapsed')));
 		this.hiddenEl = this.el.createDiv({ cls: 'cos-coord-hidden' });
 		this.registryEl = this.el.createDiv({ cls: 'cos-coord-registry' });
+		this.bgEl = this.el.createDiv({ cls: 'cos-coord-bg' });
 		this.locksEl = this.el.createDiv({ cls: 'cos-coord-locks' });
 		this.feedEl = this.el.createDiv({ cls: 'cos-coord-feed' });
 		this.renderAll();
@@ -34,7 +46,7 @@ export class BoardView {
 	unmount(): void {
 		if (this.timer !== null) { window.clearInterval(this.timer); this.timer = null; }
 		this.el?.remove();
-		this.el = this.registryEl = this.locksEl = this.feedEl = this.hiddenEl = null;
+		this.el = this.registryEl = this.locksEl = this.feedEl = this.hiddenEl = this.bgEl = null;
 	}
 
 	/** Re-read worktrees.md + board.md and re-render everything. */
@@ -65,9 +77,29 @@ export class BoardView {
 		return mergeEvents(parsed as Array<{ ts?: number }>).slice(0, 50) as Array<BoardEvent | RawLine>;
 	}
 
+	/** From the feed, the `task:<tileId>:<taskId>` resources whose latest event is still START —
+	 *  i.e. background Task/Agent runs with no DONE yet. */
+	private runningTasks(feed: Array<BoardEvent | RawLine>): BgTask[] {
+		const latest = new Map<string, BoardEvent>();
+		for (const e of feed) {
+			if (!isEvent(e) || !e.resource.startsWith('task:')) continue;
+			const prev = latest.get(e.resource);
+			if (!prev || e.ts > prev.ts) latest.set(e.resource, e);
+		}
+		const out: BgTask[] = [];
+		for (const [resource, e] of latest) {
+			if (e.status !== 'START') continue;
+			const tileId = Number(resource.split(':')[1]);
+			if (!Number.isFinite(tileId)) continue;
+			out.push({ tileId, terminal: e.terminal, label: e.detail || 'task', startTs: e.ts });
+		}
+		return out.sort((a, b) => a.startTs - b.startTs);
+	}
+
 	private renderAll(): void {
-		if (!this.registryEl || !this.locksEl || !this.feedEl || !this.hiddenEl) return;
+		if (!this.registryEl || !this.locksEl || !this.feedEl || !this.hiddenEl || !this.bgEl) return;
 		const now = Date.now();
+		const feed = this.readFeed();
 
 		// Hidden-terminals section (in-memory, provided by the grid). Resurface with Show.
 		this.hiddenEl.empty();
@@ -122,6 +154,20 @@ export class BoardView {
 			}
 		}
 
+		// Background tasks section — running Task/Agent calls across every terminal, click to
+		// jump straight to the tile running one (same "reveal" affordance as Hidden → Show).
+		this.bgEl.empty();
+		const running = this.runningTasks(feed);
+		if (running.length) {
+			this.bgEl.createDiv({ cls: 'cos-reg-repo', text: 'Background tasks' });
+			for (const t of running) {
+				const row = this.bgEl.createDiv({ cls: 'cos-reg-row cos-bg-row' });
+				row.createSpan({ cls: 'cos-reg-branch', text: `⏳ ${t.terminal}` });
+				row.createSpan({ cls: 'cos-reg-detail', text: `${t.label} · running ${fmtAge(now - t.startTs)}` });
+				row.addEventListener('click', () => this.onFocusTile(t.tileId));
+			}
+		}
+
 		// Locks section.
 		const locks = this.readLocks();
 		this.locksEl.empty();
@@ -137,7 +183,7 @@ export class BoardView {
 
 		// Event log feed.
 		this.feedEl.empty();
-		for (const e of this.readFeed()) {
+		for (const e of feed) {
 			const row = this.feedEl.createDiv({ cls: 'cos-coord-row' });
 			if (isEvent(e)) row.setText(`${e.terminal} · ${e.resource} ${e.status}${e.detail ? ' · ' + e.detail : ''}`);
 			else row.setText(e.raw);
