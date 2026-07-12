@@ -183,7 +183,11 @@ export class TerminalTile implements StageTile {
 			if (d.includes('\r')) { this.idle = false; this.opts.onEnter?.(this); }
 			else this.opts.onInput?.(this, d);
 		});
-		this.startSession(this.opts.resume ?? false);
+		// If resuming, also enable the fallback: a --continue that finds no conversation
+		// (worktree recreated, transcript gone) should land you on a fresh session, never a
+		// raw "[session ended]" dead end on the very first thing this tile ever does.
+		const resuming = this.opts.resume ?? false;
+		this.startSession(resuming, resuming);
 
 		this.el.addEventListener('focusin', () => this.opts.onFocusChange?.(this, true));
 		this.el.addEventListener('focusout', () => this.opts.onFocusChange?.(this, false));
