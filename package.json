@@ -29,6 +29,23 @@
   "build": {
     "appId": "com.ronaldfridlyand.worktree-command-center",
     "productName": "Worktree Command Center",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "index.html",
+      "app.css",
+      "styles.css",
+      "assets/**"
+    ],
+    "extraResources": [
+      {
+        "from": "pty-sidecar",
+        "to": "pty-sidecar",
+        "filter": ["**/*", "!contexts/**"]
+      }
+    ],
     "win": {
       "icon": "assets/icon.ico",
       "target": "nsis"
