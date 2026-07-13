@@ -26,7 +26,8 @@ present. A personal install must include the overlay without weakening that publ
 
 **Approach A — NSIS silent reinstall.** Fix packaging, then add `npm run install-local`:
 build (private overlay compiles in when present), produce the NSIS installer, close any
-running copy, install silently, relaunch.
+running copy, install silently. It never opens the app — the user launches it from the
+Start Menu when they want it.
 
 Rejected:
 - **Portable dir build + hand-made shortcut** — faster refresh but hand-rolled Start
@@ -66,10 +67,11 @@ features; from a clean clone it installs the public app with the stub — same s
 3. `taskkill /IM "Worktree Command Center.exe" /F` — ignore "not running" failures.
 4. Find the newest `*Setup*.exe` in `release-private/`, run it with `/S`
    (NSIS one-click installers support silent mode), wait for exit.
-5. Relaunch the installed exe, detached, so the command returns. NSIS one-click installs
-   per-user under `%LOCALAPPDATA%\Programs\<folder derived from productName>\`; the
-   script globs `%LOCALAPPDATA%\Programs\*\Worktree Command Center.exe` rather than
-   hardcoding the folder name.
+5. Do NOT launch the app — the user launches it from the Start Menu when they want it.
+   The script only confirms the install landed: NSIS one-click installs per-user under
+   `%LOCALAPPDATA%\Programs\<folder derived from productName>\`; the script globs
+   `%LOCALAPPDATA%\Programs\*\Worktree Command Center.exe` (not a hardcoded folder
+   name) and prints the found path.
 
 ## 3. Unchanged / constraints
 
@@ -79,6 +81,8 @@ features; from a clean clone it installs the public app with the stub — same s
   here and get one README sentence. No bundled Node.
 - No auto-start at login. No auto-update. Refresh is always explicit: rerun
   `npm run install-local`.
+- Nothing ever opens the app window uninvited: the install script does not launch the
+  app, and no build/verification step may start it. Only the user opens it.
 - Same-version reinstall (0.1.0 over 0.1.0) is fine for NSIS; no version bump required
   per refresh.
 
@@ -92,12 +96,14 @@ artifacts.
 
 - No runtime code changes, so the vitest suite is unaffected; it must stay green.
 - Manual end-to-end (the real acceptance test):
-  1. `npm run install-local` from the primary checkout completes without errors.
-  2. Launch from the Start Menu: window opens with the proper icon.
+  1. `npm run install-local` from the primary checkout completes without errors — and
+     does not open the app.
+  2. Later, when the user chooses: launch from the Start Menu — window opens with the
+     proper icon.
   3. Spawn a Claude terminal — proves sidecar + node-pty survived packaging.
   4. A private-overlay feature is visible (overlay really compiled in).
-  5. Rerun `install-local` while the app is running — old instance closes, new one
-     comes up.
+  5. Rerunning `install-local` while the app happens to be running closes it and
+     installs cleanly (it stays closed until the user reopens it).
   6. `npm run dist` with `private/` present still refuses.
 
 ## Error handling
@@ -106,5 +112,5 @@ artifacts.
   nothing is installed.
 - `taskkill` when the app isn't running → ignored.
 - No installer exe found in the output directory → clear error naming the directory.
-- Installed exe missing at the expected path after install → print the expected path and
-  ask the user to launch manually once; the install itself already succeeded.
+- Installed exe not found under `%LOCALAPPDATA%\Programs\*` after install → warn with
+  the searched location; the install itself already reported success.

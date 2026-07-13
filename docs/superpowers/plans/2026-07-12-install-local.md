@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make Worktree Command Center a normally installed Windows app with a one-command refresh (`npm run install-local`) that builds, silently reinstalls, and relaunches it — private overlay included when present.
+**Goal:** Make Worktree Command Center a normally installed Windows app with a one-command refresh (`npm run install-local`) that builds and silently reinstalls it — private overlay included when present, and without ever opening the app.
 
-**Architecture:** Fix the existing electron-builder config so a packaged app actually works (the PTY sidecar must be copied to `process.resourcesPath/pty-sidecar`, where `electron/main.ts` already looks), then add a small Node script that chains build → package → silent NSIS install → relaunch. No runtime code changes.
+**Architecture:** Fix the existing electron-builder config so a packaged app actually works (the PTY sidecar must be copied to `process.resourcesPath/pty-sidecar`, where `electron/main.ts` already looks), then add a small Node script that chains build → package → silent NSIS install (no launch). No runtime code changes.
 
 **Tech Stack:** electron-builder 25 (NSIS, already a devDependency), Node ESM scripts (`scripts/*.mjs`), PowerShell for verification.
 
@@ -18,6 +18,7 @@
 - Private-including artifacts must only ever land in the gitignored `release-private/`, never in `release/`.
 - Script style: tabs for indentation, single quotes, `[install-local]`-prefixed log lines (match `scripts/check-no-private.mjs` / `scripts/fix-electron.mjs`).
 - The installed app resolves `node.exe`, `git`, and `claude` from PATH at runtime — document, don't bundle.
+- NEVER open the app window: no step may launch the app (packaged, unpacked, or dev), and the install script must not auto-launch it. Only the user opens the app, from the Start Menu, on their own schedule.
 
 ---
 
@@ -136,12 +137,7 @@ Get-ChildItem -Recurse 'release/win-unpacked/resources/app.asar.unpacked/node_mo
 
 Expected, in order: `True`, `True`, `True`, `False` (contexts excluded), `True`, and at least one `.node` file listed (native node-pty unpacked from the asar).
 
-- [ ] **Step 6: Smoke-run the unpacked exe**
-
-Run: `& 'release/win-unpacked/Worktree Command Center.exe'`
-Expected: the process starts and stays up (packaged mode — sidecar resolved from `resources/pty-sidecar`). Verify with `Get-Process 'Worktree Command Center'` (listed, and still listed a few seconds later — an instant crash would be gone). Then stop it: `taskkill /IM "Worktree Command Center.exe" /F`.
-
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```powershell
 git add package.json .gitignore
@@ -156,7 +152,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
 
 ### Task 2: `npm run install-local` script + docs
 
-One command that builds (private overlay compiles in when present), packages the NSIS installer into `release-private/`, closes any running installed copy, silently installs, and relaunches.
+One command that builds (private overlay compiles in when present), packages the NSIS installer into `release-private/`, closes any running installed copy, and silently installs. It never launches the app.
 
 **Files:**
 - Create: `scripts/install-local.mjs`
@@ -171,13 +167,14 @@ One command that builds (private overlay compiles in when present), packages the
 
 ```js
 // Build the app (private overlay compiled in when present), package a Windows
-// installer, silently (re)install it per-user, and relaunch the installed app.
+// installer, and silently (re)install it per-user. Never launches the app — the
+// user opens it from the Start Menu when they want it.
 //
 // Deliberately does NOT go through `npm run dist`: that script guards against
 // accidentally publishing private code in a public installer. This one targets THIS
 // machine only — artifacts land in the gitignored release-private/, kept separate
 // from public release/ installers.
-import { execSync, spawn, spawnSync } from 'child_process';
+import { execSync, spawnSync } from 'child_process';
 import { existsSync, readdirSync, statSync } from 'fs';
 import { join } from 'path';
 import { homedir, platform } from 'os';
@@ -220,8 +217,9 @@ if (inst.status !== 0) {
 	process.exit(1);
 }
 
-// NSIS one-click installs per-user under %LOCALAPPDATA%\Programs\<dir derived from
-// productName>; glob for the exe instead of hardcoding the directory name.
+// Confirm the install landed — but do NOT launch the app; the user opens it from the
+// Start Menu when they want it. NSIS one-click installs per-user under
+// %LOCALAPPDATA%\Programs\<dir derived from productName>; glob instead of hardcoding.
 const programs = join(process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local'), 'Programs');
 let installed = null;
 for (const d of readdirSync(programs)) {
@@ -229,12 +227,10 @@ for (const d of readdirSync(programs)) {
 	if (existsSync(p)) { installed = p; break; }
 }
 if (!installed) {
-	console.log(`[install-local] installed, but ${EXE} not found under ${programs}\\* — launch it from the Start Menu manually.`);
+	console.log(`[install-local] warning: ${EXE} not found under ${programs}\\* — the installer reported success, so check the Start Menu.`);
 	process.exit(0);
 }
-console.log(`[install-local] relaunching ${installed}`);
-spawn(installed, [], { detached: true, stdio: 'ignore' }).unref();
-console.log('[install-local] done — refreshed install is running');
+console.log(`[install-local] done — installed at ${installed} (launch it from the Start Menu)`);
 ```
 
 - [ ] **Step 2: Add the npm script**
@@ -265,11 +261,12 @@ After the "Build from source" section (before "### Troubleshooting"), add:
 ```markdown
 ### Install as an app
 
-`npm run install-local` builds the app, packages a Windows installer, silently
-(re)installs it per-user, and relaunches it — Start Menu entry included. Rerun it any
-time to refresh the installed copy with your latest code. If a `private/` overlay is
-present it is compiled in; those installers go to the gitignored `release-private/`
-(separate from public `release/` artifacts) and are meant to stay on your machine.
+`npm run install-local` builds the app, packages a Windows installer, and silently
+(re)installs it per-user — Start Menu entry included, without ever opening the app
+(launch it from the Start Menu when you want it). Rerun it any time to refresh the
+installed copy with your latest code. If a `private/` overlay is present it is
+compiled in; those installers go to the gitignored `release-private/` (separate from
+public `release/` artifacts) and are meant to stay on your machine.
 
 The installed app still resolves `node.exe`, `git`, and `claude` from PATH at runtime.
 ```
@@ -282,30 +279,25 @@ Expected output, in order:
 - `[install-local] no private/ overlay — building the public app` (this worktree has no `private/`)
 - esbuild + electron-builder output ending in an NSIS installer build (this pass is slower than Task 1's `--dir` — NSIS compression)
 - `[install-local] installing release-private\Worktree Command Center Setup 0.1.0.exe silently…`
-- `[install-local] relaunching C:\Users\<user>\AppData\Local\Programs\<dir>\Worktree Command Center.exe`
-- `[install-local] done — refreshed install is running`
+- `[install-local] done — installed at C:\Users\<user>\AppData\Local\Programs\<dir>\Worktree Command Center.exe (launch it from the Start Menu)`
 
-Exit code 0. The app window opens by itself.
+Exit code 0. **The app window must NOT open** — the script never launches it.
 
-- [ ] **Step 5: Verify the install is real**
+- [ ] **Step 5: Verify the install is real (without opening the app)**
 
 Run:
 
 ```powershell
-Get-Process 'Worktree Command Center' | Select-Object -First 1 ProcessName
+Get-Process 'Worktree Command Center' -ErrorAction SilentlyContinue
 Test-Path "$env:APPDATA/Microsoft/Windows/Start Menu/Programs/Worktree Command Center.lnk"
+Get-ChildItem "$env:LOCALAPPDATA/Programs" -Recurse -Depth 1 -Filter 'Worktree Command Center.exe' | Select-Object FullName
 Get-ChildItem release-private -Filter '*Setup*.exe' | Select-Object Name
 git status --porcelain release-private
 ```
 
-Expected: process listed; `True` (Start Menu shortcut, named per `nsis.shortcutName`); one `Worktree Command Center Setup 0.1.0.exe`; empty git status output (directory ignored).
+Expected: NO process (nothing launched); `True` (Start Menu shortcut, named per `nsis.shortcutName`); the installed exe's full path; one `Worktree Command Center Setup 0.1.0.exe`; empty git status output (directory ignored).
 
-- [ ] **Step 6: Rerun-while-running check (idempotent refresh)**
-
-With the app still open from Step 4, run `npm run install-local` again.
-Expected: same success output; the old instance closes (taskkill) and a fresh one launches. Exit code 0.
-
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```powershell
 git add scripts/install-local.mjs package.json README.md
@@ -330,7 +322,7 @@ The packaged mechanics are machine-verified in Tasks 1–2; what's left needs hu
 
 - [ ] **Step 1: Human check on the installed (public/stub) app**
 
-In the installed app launched by Task 2: window has the proper icon in taskbar + title bar; add/select a repo and spawn a Claude terminal — the terminal starts and accepts input (proves sidecar + node-pty survived packaging).
+Whenever you choose, launch "Worktree Command Center" from the Start Menu: window has the proper icon in taskbar + title bar; add/select a repo and spawn a Claude terminal — the terminal starts and accepts input (proves sidecar + node-pty survived packaging).
 
 - [ ] **Step 2: Merge this branch to `main`** (via the normal finishing flow — PR or merge, user's choice).
 
@@ -343,7 +335,7 @@ git pull
 npm run install-local
 ```
 
-Expected: first log line is `[install-local] private/ overlay present — compiling it in`; installer lands in `release-private/`; app relaunches.
+Expected: first log line is `[install-local] private/ overlay present — compiling it in`; installer lands in `release-private/`; the app does not open.
 
 - [ ] **Step 4: Human check on the private build**
 
