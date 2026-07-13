@@ -44,6 +44,7 @@ type SessionEnvProvider = (ctx: { workspaceId: string }) => Record<string, strin
 ### PrivateApi additions
 
 ```ts
+initialConfig: any; // startup config snapshot — synchronous read inside the hook
 setSessionEnv(provider: SessionEnvProvider): void;
 activeWorkspaceId(): string;
 onWorkspaceSwitch(cb: (id: string) => void): void;

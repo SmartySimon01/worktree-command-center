@@ -920,3 +920,5 @@
 .cos-chat-inputrow { border-top:1px solid var(--background-modifier-border); padding:8px; }
 .cos-chat-tile.paused .cos-chat-inputrow { background:rgba(245,166,35,.08); }
 .cos-chat-inputrow input { width:100%; box-sizing:border-box; background:#1a1c28; border:1px solid #34374d; border-radius:18px; padding:8px 12px; color:#fff; font-size:12px; }
+
+.wcc-usage-host { display: contents; }

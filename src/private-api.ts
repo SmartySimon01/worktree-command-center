@@ -1,13 +1,26 @@
 import type { TerminalsGrid } from './terminals/terminals-grid';
 
+/** Extra env for spawned claude sessions, resolved per workspace at spawn time. */
+export type SessionEnvProvider = (ctx: { workspaceId: string }) => Record<string, string>;
+
 /** Surface handed to the private overlay (private/index.ts) at startup.
  *  Grow this only when a private feature actually needs more. */
 export interface PrivateApi {
 	topBar: HTMLElement;
 	activeGrid: () => TerminalsGrid;
 	config: { get: () => Promise<any>; set: (c: any) => Promise<boolean> };
+	/** Startup config snapshot — lets the hook read config SYNCHRONOUSLY (the hook runs
+	 *  before the first mount; an async config read would race session restore). */
+	initialConfig: any;
 	toast: (msg: string) => void;
 	promptForTopic: (title: string, placeholder: string, initial?: string, okLabel?: string) => Promise<string | null>;
 	userData: string;
 	sidecarDir: string;
+	/** Set the session-env provider consulted at every claude spawn. Affects future spawns only. */
+	setSessionEnv: (provider: SessionEnvProvider) => void;
+	activeWorkspaceId: () => string;
+	/** cb fires after a workspace switch completes (new workspace already mounted). */
+	onWorkspaceSwitch: (cb: (id: string) => void) => void;
+	/** Dispose and recreate the usage battery probe+widget (re-reads the provider env). */
+	restartUsageProbe: () => void;
 }

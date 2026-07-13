@@ -11,6 +11,7 @@ import { WorkspaceBar } from './ui/workspace-bar';
 import { normalizeWorkspaces, addWorkspace, closeWorkspace, nextActiveAfter, type Workspace } from './terminals/workspace-store';
 import * as path from 'path';
 import { registerPrivateFeatures } from 'wcc-private';
+import type { SessionEnvProvider } from './private-api';
 
 declare global {
 	interface Window {
@@ -44,16 +45,33 @@ async function main(): Promise<void> {
 		const addFolderBtn = topBar.createEl('button', { cls: 'wcc-add', text: '➕ Add folder' });
 		const statusSpan = topBar.createSpan({ cls: 'wcc-status', text: `${repos.length} repos` });
 
-		// Usage battery (account-level; shared across workspaces).
-		const usageProbe = new UsageProbe({ sidecarPath: path.join(sidecarDir, 'sidecar.cjs'), cwd: repos[0]?.path ?? userData });
-		const usageWidget = new UsageWidget(usageProbe);
-		usageWidget.render(topBar);
-		window.addEventListener('beforeunload', () => { usageWidget.dispose(); usageProbe.dispose(); });
-
 		// --- workspaces ---
 		let workspaces: Workspace[] = normalizeWorkspaces(cfg.workspaces);
 		let activeId = workspaces.some((w) => w.id === cfg.activeWorkspace) ? (cfg.activeWorkspace as string) : workspaces[0]!.id;
 		const grids = new Map<string, TerminalsGrid>();
+
+		// Session-env provider (see docs/superpowers/specs/2026-07-13-session-env-provider-design.md).
+		// Overlay-replaceable; consulted lazily at each spawn through safeSessionEnv at the call sites.
+		let sessionEnvProvider: SessionEnvProvider = () => ({});
+		const wsSwitchCbs: Array<(id: string) => void> = [];
+
+		// Usage battery (follows the ACTIVE workspace's session env; restartable by the overlay).
+		const usageHost = topBar.createDiv({ cls: 'wcc-usage-host' });
+		let usageProbe: UsageProbe | null = null;
+		let usageWidget: UsageWidget | null = null;
+		const startUsageProbe = (): void => {
+			usageWidget?.dispose(); usageProbe?.dispose();
+			usageHost.empty();
+			usageProbe = new UsageProbe({
+				sidecarPath: path.join(sidecarDir, 'sidecar.cjs'),
+				cwd: repos[0]?.path ?? userData,
+				sessionEnv: () => sessionEnvProvider({ workspaceId: activeId }),
+			});
+			usageWidget = new UsageWidget(usageProbe);
+			usageWidget.render(usageHost);
+		};
+		startUsageProbe();
+		window.addEventListener('beforeunload', () => { usageWidget?.dispose(); usageProbe?.dispose(); });
 
 		const depsFor = (id: string): GridDeps => ({
 			repos,
@@ -65,6 +83,7 @@ async function main(): Promise<void> {
 			sessionsFile: path.join(userData, '.terminal-sessions.json'),
 			bypassPermissions: true,
 			linearConvert: parseLinearConvertConfig(cfg.linearConvert),
+			sessionEnv: () => sessionEnvProvider({ workspaceId: id }),
 			toast,
 			promptForTopic,
 		});
@@ -107,6 +126,7 @@ async function main(): Promise<void> {
 			await activeGrid.mount(gridContainer);
 			bar.refresh();
 			persist();
+			for (const cb of wsSwitchCbs) { try { cb(id); } catch { /* overlay callback must not break switching */ } }
 		}
 
 		async function onAdd(): Promise<void> {
@@ -131,6 +151,27 @@ async function main(): Promise<void> {
 			grids.delete(id);
 			workspaces = closeWorkspace(workspaces, id);
 			if (id === activeId) { void switchTo(target); } else { persist(); bar.refresh(); }
+		}
+
+		// Private overlay (see README "Private extensions"): must never take down the app.
+		// Runs BEFORE the first mount so a provider set here applies to restored sessions.
+		try {
+			registerPrivateFeatures({
+				topBar,
+				activeGrid: () => activeGrid,
+				config: { get: () => window.wcc.getConfig(), set: (c) => window.wcc.setConfig(c) },
+				initialConfig: cfg,
+				toast,
+				promptForTopic,
+				userData,
+				sidecarDir,
+				setSessionEnv: (p) => { sessionEnvProvider = p; },
+				activeWorkspaceId: () => activeId,
+				onWorkspaceSwitch: (cb) => { wsSwitchCbs.push(cb); },
+				restartUsageProbe: () => startUsageProbe(),
+			});
+		} catch (e) {
+			toast('Private features failed to load: ' + e);
 		}
 
 		await activeGrid.mount(gridContainer);
@@ -180,21 +221,6 @@ async function main(): Promise<void> {
 				toast(`Added ${found.length} repo(s)`);
 			})();
 		});
-
-		// Private overlay (see README "Private extensions"): must never take down the app.
-		try {
-			registerPrivateFeatures({
-				topBar,
-				activeGrid: () => activeGrid,
-				config: { get: () => window.wcc.getConfig(), set: (c) => window.wcc.setConfig(c) },
-				toast,
-				promptForTopic,
-				userData,
-				sidecarDir,
-			});
-		} catch (e) {
-			toast('Private features failed to load: ' + e);
-		}
 	} catch (e) {
 		document.body.textContent = 'Startup error: ' + e;
 	}
