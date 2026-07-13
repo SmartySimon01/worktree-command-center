@@ -1,9 +1,9 @@
-import { SessionBridge } from './session-bridge';
+import { SessionBridge, safeSessionEnv } from './session-bridge';
 import { stripAnsi } from './usage-parse';
 import * as fs from 'fs';
 import * as path from 'path';
 
-export interface LinearConvertProbeOpts { sidecarPath: string; cwd: string; linear?: LinearConvertConfig; }
+export interface LinearConvertProbeOpts { sidecarPath: string; cwd: string; linear?: LinearConvertConfig; sessionEnv?: () => Record<string, string>; }
 export interface ProposedIssue { title: string; description: string; }
 export interface CreatedIssue { title: string; url?: string; ok: boolean; error?: string; }
 
@@ -61,7 +61,8 @@ export class LinearConvertProbe {
       const cleanup = (): void => { try { fs.unlinkSync(tmp); } catch { /* gone */ } };
       const bridge = new SessionBridge(
         this.opts.sidecarPath, this.opts.cwd, 'claude',
-        ['-p', prompt(tmp), '--output-format', 'text', '--allowedTools', tool], {},
+        ['-p', prompt(tmp), '--output-format', 'text', '--allowedTools', tool],
+        safeSessionEnv(this.opts.sessionEnv),
       );
       let buf = '';
       let done = false;

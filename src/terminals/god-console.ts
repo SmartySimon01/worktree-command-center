@@ -3,7 +3,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import * as fs from 'fs';
 import * as path from 'path';
-import { SessionBridge } from './session-bridge';
+import { SessionBridge, safeSessionEnv } from './session-bridge';
 import { godSystemPrompt, type GodRepo } from './god';
 import { scrollIntentForKey, type ScrollIntent } from './scroll-keys';
 import { FitThrottle } from './fit-throttle';
@@ -15,6 +15,7 @@ export interface GodConsoleOpts {
 	coordDir: string;
 	sidecarPath: string;
 	godHomeDir: string;   // a neutral cwd outside every repo
+	sessionEnv?: () => Record<string, string>;
 }
 
 /** GOD: a single privileged claude session in a docked side panel. Real terminal — the
@@ -130,6 +131,7 @@ export class GodConsole {
 		if (ctxFile) args.push('--append-system-prompt-file', ctxFile);
 		const sidecarDir = path.dirname(this.opts.sidecarPath);
 		const env: Record<string, string> = {
+			...safeSessionEnv(this.opts.sessionEnv),
 			COS_COORD_DIR: this.opts.coordDir,
 			COS_TERMINAL_ID: '0',
 			COS_TERMINAL_NAME: 'Kane',

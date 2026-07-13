@@ -38,6 +38,7 @@ export interface GridDeps {
 	group: string;
 	bypassPermissions: boolean;
 	linearConvert?: LinearConvertConfig;
+	sessionEnv?: () => Record<string, string>;
 	toast: (msg: string) => void;
 	promptForTopic: (title: string, placeholder: string, initial?: string, okLabel?: string) => Promise<string | null>;
 }
@@ -120,8 +121,8 @@ export class TerminalsGrid {
 		this.coordDir = deps.coordDir;
 		this.coordHookPath = deps.coordHookPath;
 		this.journalStore = new JournalStore(path.join(this.coordDir, 'journals'));
-		this.formatProbe = new FormatProbe({ sidecarPath: this.sidecarPath, cwd: this.coordDir });
-		this.linearProbe = new LinearConvertProbe({ sidecarPath: this.sidecarPath, cwd: this.coordDir, linear: deps.linearConvert });
+		this.formatProbe = new FormatProbe({ sidecarPath: this.sidecarPath, cwd: this.coordDir, sessionEnv: deps.sessionEnv });
+		this.linearProbe = new LinearConvertProbe({ sidecarPath: this.sidecarPath, cwd: this.coordDir, linear: deps.linearConvert, sessionEnv: deps.sessionEnv });
 	}
 
 	/** Mount the grid into a page container. Sessions PERSIST across mounts (tab switches):
@@ -547,7 +548,7 @@ export class TerminalsGrid {
 		if (!this.godConsole) {
 			const godHomeDir = path.join(this.coordDir, '..', '.god', this.deps.group);
 			this.godConsole = new GodConsole(
-				{ repos: this.repos.map((r) => ({ name: r.name, path: r.path })), coordDir: this.coordDir, sidecarPath: this.sidecarPath, godHomeDir },
+				{ repos: this.repos.map((r) => ({ name: r.name, path: r.path })), coordDir: this.coordDir, sidecarPath: this.sidecarPath, godHomeDir, sessionEnv: this.deps.sessionEnv },
 				() => this.hideGod(),
 			);
 			if (this.stageWrapEl) this.godConsole.render(this.stageWrapEl);
@@ -926,6 +927,7 @@ export class TerminalsGrid {
 			repoName, repoPath, baseBranch, worktree,
 			sidecarPath: this.sidecarPath,
 			coordDir: this.coordDir,
+			sessionEnv: this.deps.sessionEnv,
 			resume,
 			bypassPermissions: this.deps.bypassPermissions,
 			name,

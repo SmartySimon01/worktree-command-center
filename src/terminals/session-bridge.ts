@@ -95,3 +95,9 @@ export class SessionBridge {
 		return 1;
 	}
 }
+
+/** Overlay-provided extra env for a spawn (see docs/superpowers/specs/2026-07-13-session-env-provider-design.md).
+ *  Never throws; {} when unset or failing — a buggy provider must not break spawning. */
+export function safeSessionEnv(fn?: () => Record<string, string>): Record<string, string> {
+	try { return fn?.() ?? {}; } catch { return {}; }
+}

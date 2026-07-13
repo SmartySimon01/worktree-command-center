@@ -1,7 +1,7 @@
-import { SessionBridge } from './session-bridge';
+import { SessionBridge, safeSessionEnv } from './session-bridge';
 import { parseUsage, stripAnsi, type UsageReadout } from './usage-parse';
 
-export interface UsageProbeOpts { sidecarPath: string; cwd: string; }
+export interface UsageProbeOpts { sidecarPath: string; cwd: string; sessionEnv?: () => Record<string, string>; }
 
 /** Drives a hidden, reused `claude` session to read `/usage` on demand. `/usage` is a local
  *  command — this consumes no tokens. No worktree, no UI. */
@@ -15,7 +15,7 @@ export class UsageProbe {
 	private ensureSession(): Promise<void> {
 		if (this.bridge && this.ready) return Promise.resolve();
 		if (!this.bridge) {
-			const b = new SessionBridge(this.opts.sidecarPath, this.opts.cwd, 'claude', [], {});
+			const b = new SessionBridge(this.opts.sidecarPath, this.opts.cwd, 'claude', [], safeSessionEnv(this.opts.sessionEnv));
 			this.bridge = b;
 			b.onData((d) => { this.buf += d; });
 			b.onExit(() => { this.bridge = null; this.ready = false; });

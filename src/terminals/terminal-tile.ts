@@ -3,7 +3,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import * as fs from 'fs';
 import * as path from 'path';
-import { SessionBridge } from './session-bridge';
+import { SessionBridge, safeSessionEnv } from './session-bridge';
 import { removeWorktreeAndBranch, terminalSystemPrompt, type WorktreeInfo } from './worktree-manager';
 import { scrollIntentForKey, type ScrollIntent } from './scroll-keys';
 import { FitThrottle } from './fit-throttle';
@@ -19,6 +19,7 @@ export interface TerminalTileOpts {
 	worktree: WorktreeInfo;
 	sidecarPath: string;
 	coordDir: string;
+	sessionEnv?: () => Record<string, string>;
 	onClosed: (tile: TerminalTile) => void;
 	onHide?: (tile: TerminalTile) => void;
 	onLock?: (tile: TerminalTile) => void;
@@ -456,6 +457,7 @@ export class TerminalTile implements StageTile {
 		if (ctxFile) args.push('--append-system-prompt-file', ctxFile);
 		const sidecarDir = path.dirname(this.opts.sidecarPath);
 		const env: Record<string, string> = {
+			...safeSessionEnv(this.opts.sessionEnv),
 			COS_COORD_DIR: this.opts.coordDir,
 			COS_TERMINAL_ID: String(this.opts.tileId),
 			COS_TERMINAL_NAME: this.displayName,
