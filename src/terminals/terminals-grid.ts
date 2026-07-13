@@ -241,7 +241,10 @@ export class TerminalsGrid {
 		this.chatTile?.unmount();
 		this.chatTile = null;
 		this.chatRoom = null;
-		this.stopFloorFeed();
+		// Deliberately NOT stopping the GOD floor feed here. unmount() only DETACHES the view
+		// (tab/workspace switch) — worker sessions keep running — so Kane must keep seeing the
+		// floor and receiving outbox commands across switches. The feed is tied to the GOD
+		// console's lifetime and torn down only in dispose().
 		this.board?.unmount();
 		// Drop the controls bar too, so re-mounting this grid (workspace switch) doesn't stack a
 		// second one. The stage wrap is detached-but-retained (tiles + sidecars stay alive).
@@ -570,7 +573,9 @@ export class TerminalsGrid {
 	private hideGod(): void {
 		this.godVisible = false;
 		this.godConsole?.setVisible(false);
-		this.stopFloorFeed();
+		// Deliberately NOT stopping the feed. Hiding the panel must not blind/mute Kane — his
+		// session stays alive while hidden, so snapshots + outbox draining keep running. The feed
+		// is started on GOD-console create/show and stopped only in dispose().
 		this.godBtn?.toggleClass('cos-god-on', false);
 		this.applyLayout();
 	}
@@ -1011,6 +1016,7 @@ export class TerminalsGrid {
 		this.stageResizeObs?.disconnect(); this.stageResizeObs = null;
 		this.board = null;
 		this.stopPulse();
+		this.stopFloorFeed(); // feed now persists across unmount()/hideGod(), so stop it on real teardown
 		this.godConsole?.dispose(); this.godConsole = null;
 		for (const t of this.tiles) t.kill();
 		for (const t of this.hidden) t.kill();
