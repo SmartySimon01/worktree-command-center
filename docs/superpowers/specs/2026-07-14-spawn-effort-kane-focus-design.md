@@ -65,14 +65,14 @@ Alt+K opens/focuses Kane.
 
 - `GodConsoleOpts` gains `onFocusChange?: (focused: boolean) => void`; `render()` wires
   `focusin`/`focusout` on the panel root (same pattern as `terminal-tile.ts:184-185`).
-- `TerminalsGrid` keeps `private godFocused = false`, set by the callback (wired where
-  the console is constructed in `toggleGod()`).
+- `TerminalsGrid` tracks `private focusedKane: GodConsole | null` — the instance (primary
+  or duplicate) that holds keyboard focus — set by each console's callback.
 - `autoCenter()` passes `userTyping: this.q.composingLen > 0 || this.godFocused` — Kane
   holding focus now rides the same tested "mid-type → hold" rule in `decideCenter`
   (`focus-decider.ts:38`). No layout yank, no focus steal, ready-stack state unaffected
   (the ready tile still gets the spotlight once Kane is blurred).
-- Window-refocus handler (`:323`) becomes: if `godFocused && godVisible` → `godConsole.focus()`,
-  else `focusCentered()` (OS blur doesn't fire `focusout` inside the document, so the flag
+- Window-refocus handler becomes: if `focusedKane` → `focusedKane.focus()`, else
+  `focusCentered()` (OS blur doesn't fire `focusout` inside the document, so the flag
   survives alt-tab and restores correctly).
 - Hiding Kane naturally fires `focusout` → flag clears.
 
@@ -115,6 +115,8 @@ Alt+K opens/focuses Kane.
   and calls `TerminalTile.setName(name)` (`terminal-tile.ts:405` — fires `onRename`, so
   the grid persists it). Target not found or a journal tile → god-inbox error.
 - Kane's system prompt documents both.
+- Renaming retargets any active watchers registered on the old name (`remapWatchers`), so
+  a rename can never strand a watch.
 
 ## 7. Duplicate Kane (multiple consoles)
 
@@ -133,8 +135,9 @@ Alt+K opens/focuses Kane.
   - `notify()` broadcasts to primary + all duplicates (watch pings, personality
     injections, pulses) — they share the god role and any of them may have registered
     the watch;
-  - every instance feeds the same `godFocused` flag (`focusout` fires before the next
-    `focusin`, so one boolean stays correct);
+  - every instance reports into `focusedKane` (the instance with focus; `focusout` fires
+    before the next `focusin`, so the last writer wins correctly), and `GodConsole.dispose()`
+    clears it explicitly — removing a focused element fires no `focusout`;
   - creating a duplicate also `startFloorFeed()`s (outbox + floor snapshots are shared).
 
 ## 8. Kane panel resize (drag the left edge)

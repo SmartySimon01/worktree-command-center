@@ -15,7 +15,7 @@ import { emptyState, applyKeystroke, onReady as rqReady, onSubmit as rqSubmit, o
 import { decideCenter, type SpotlightState } from './focus-decider';
 import { partitionByHidden } from './session-partition';
 import { GodConsole } from './god-console';
-import { slug as godSlug, formatFloorSnapshot, formatFloorIndex, parseOutboxMessage, resolveTellTarget, EFFORT_LEVELS, type OutboxMessage } from './god';
+import { slug as godSlug, formatFloorSnapshot, formatFloorIndex, parseOutboxMessage, resolveTellTarget, remapWatchers, EFFORT_LEVELS, type OutboxMessage } from './god';
 import { looksLikeMenu, looksErrored, looksBusy } from './prompt-detect';
 import { looksLikePrompt } from './chat-room';
 import { classifyAttention, type AttentionItem } from './attention';
@@ -108,7 +108,7 @@ export class TerminalsGrid {
 	private godBtn: HTMLButtonElement | null = null;
 	private godConsole: GodConsole | null = null;
 	private godVisible = false;
-	private godFocused = false;          // Kane's terminal holds keyboard focus right now
+	private focusedKane: GodConsole | null = null;   // which Kane console (primary or duplicate) holds keyboard focus
 	private extraKanes: GodConsole[] = [];
 	private kaneSeq = 1; // monotonic: duplicates are Kane 2, 3, … — numbers never reused in-session
 	private holdUntil = 0;               // epoch ms: autoCenter is suppressed until then
@@ -346,7 +346,7 @@ export class TerminalsGrid {
 		if (this.spotlightTimer === null) this.spotlightTimer = window.setInterval(() => this.autoCenter(), 1000);
 		// When the OS window regains focus (alt-tab back in), put the cursor back into the
 		// centered terminal — Electron otherwise restores it to whatever tile had it before.
-		this.onWinFocus = () => { if (this.godFocused && this.godVisible) this.godConsole?.focus(); else this.focusCentered(); };
+		this.onWinFocus = () => { if (this.focusedKane) this.focusedKane.focus(); else this.focusCentered(); };
 		window.addEventListener('focus', this.onWinFocus);
 		// Leaving Obsidian entirely (alt-tab to another app) also releases the typing-hold,
 		// so terminals keep bubbling while you're working elsewhere.
@@ -618,10 +618,11 @@ export class TerminalsGrid {
 	private toggleGod(): void {
 		if (!this.godConsole) {
 			const godHomeDir = path.join(this.coordDir, '..', '.god', this.deps.group);
-			this.godConsole = new GodConsole(
-				{ repos: this.repos.map((r) => ({ name: r.name, path: r.path })), coordDir: this.coordDir, sidecarPath: this.sidecarPath, godHomeDir, sessionEnv: this.deps.sessionEnv, onFocusChange: (f) => { this.godFocused = f; } },
+			const kane: GodConsole = new GodConsole(
+				{ repos: this.repos.map((r) => ({ name: r.name, path: r.path })), coordDir: this.coordDir, sidecarPath: this.sidecarPath, godHomeDir, sessionEnv: this.deps.sessionEnv, onFocusChange: (f) => { this.focusedKane = f ? kane : (this.focusedKane === kane ? null : this.focusedKane); } },
 				() => this.hideGod(),
 			);
+			this.godConsole = kane;
 			if (this.stageWrapEl) this.godConsole.render(this.stageWrapEl);
 			this.godVisible = true;
 			this.startFloorFeed();
@@ -653,7 +654,7 @@ export class TerminalsGrid {
 				sidecarPath: this.sidecarPath,
 				godHomeDir,
 				sessionEnv: this.deps.sessionEnv,
-				onFocusChange: (f) => { this.godFocused = f; },
+				onFocusChange: (f) => { this.focusedKane = f ? kane : (this.focusedKane === kane ? null : this.focusedKane); },
 				instanceName: `Kane ${n}`,
 				terminalId: String(-n),
 			},
@@ -784,8 +785,13 @@ export class TerminalsGrid {
 		} else if (msg.kind === 'rename') {
 			const name = resolveTellTarget(msg.target, liveNames);
 			const tile = name ? this.allSessions().find((t) => t.name === name) : undefined;
-			if (tile && !tile.isJournal) (tile as TerminalTile).setName(msg.name);
-			else this.writeGodInbox(`cannot rename "${msg.target}" — not a live terminal. Live: ${liveNames.join(', ') || '(none)'}`);
+			if (tile && !tile.isJournal) {
+				(tile as TerminalTile).setName(msg.name);
+				// Watchers match on terminal name — retarget them so a rename can't strand a watch.
+				this.watchers = remapWatchers(this.watchers, name!, msg.name);
+			} else {
+				this.writeGodInbox(`cannot rename "${msg.target}" — not a live terminal. Live: ${liveNames.join(', ') || '(none)'}`);
+			}
 		} else {
 			void this.spawnFromKane(msg.repo, msg.base, msg.task, msg.model, msg.effort, msg.name);
 		}
@@ -943,7 +949,7 @@ export class TerminalsGrid {
 			tiles: this.tiles.map((t) => ({ id: t.tileId, state: this.spotlightState(t) })),
 			centeredId: this.centeredId,
 			readyOrder: this.q.stack,
-			userTyping: this.q.composingLen > 0 || this.godFocused,
+			userTyping: this.q.composingLen > 0 || this.focusedKane !== null,
 			globalLock: this.locked,
 			lockedTileId: this.lockedTileId,
 		});

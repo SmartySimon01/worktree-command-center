@@ -49,7 +49,7 @@ export class GodConsole {
 		// Left-edge grip: drag to resize the panel width. One shared width for every Kane
 		// panel, persisted across sessions; the body's ResizeObserver refits xterm live.
 		const saved = Number(window.localStorage.getItem('cos-god-width'));
-		if (Number.isFinite(saved) && saved >= 280) this.el.style.flex = `0 0 ${Math.round(saved)}px`;
+		if (Number.isFinite(saved) && saved >= 280) this.el.style.flex = `0 0 ${Math.min(Math.round(saved), Math.round(window.innerWidth * 0.7))}px`;
 		const grip = this.el.createDiv({ cls: 'cos-god-resize' });
 		grip.addEventListener('pointerdown', (e) => {
 			e.preventDefault();
@@ -332,6 +332,8 @@ export class GodConsole {
 
 	/** Full teardown — kills the session. */
 	dispose(): void {
+		// Removing a focused element fires no focusout — clear the grid's focus flag manually.
+		if (this.el?.contains(document.activeElement)) this.opts.onFocusChange?.(false);
 		this.resizeObs?.disconnect(); this.resizeObs = null;
 		this.fitThrottle?.dispose(); this.fitThrottle = null;
 		this.bridge?.kill(); this.bridge = null;

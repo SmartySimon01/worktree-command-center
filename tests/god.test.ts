@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   parseOutboxMessage, resolveTellTarget, slug,
-  formatFloorSnapshot, formatFloorIndex, godSystemPrompt, EFFORT_LEVELS,
+  formatFloorSnapshot, formatFloorIndex, godSystemPrompt, EFFORT_LEVELS, remapWatchers,
 } from '../src/terminals/god';
 
 describe('parseOutboxMessage', () => {
@@ -115,5 +115,13 @@ describe('godSystemPrompt', () => {
 describe('EFFORT_LEVELS', () => {
   it('lists the six claude CLI effort levels, ultracode last', () => {
     expect(EFFORT_LEVELS).toEqual(['low', 'medium', 'high', 'xhigh', 'max', 'ultracode']);
+  });
+});
+
+describe('remapWatchers', () => {
+  it('retargets only the renamed terminal, preserving notes', () => {
+    const ws = [{ target: 'A', note: 'x' }, { target: 'B', note: 'y' }];
+    expect(remapWatchers(ws, 'A', 'C')).toEqual([{ target: 'C', note: 'x' }, { target: 'B', note: 'y' }]);
+    expect(remapWatchers(ws, 'Z', 'C')).toEqual(ws);
   });
 });

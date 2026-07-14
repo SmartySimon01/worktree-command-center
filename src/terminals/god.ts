@@ -57,6 +57,11 @@ export function resolveTellTarget(target: string, names: string[]): string | nul
 	return names.find((n) => n.toLowerCase() === lc) ?? null;
 }
 
+/** Retarget active watchers when a terminal is renamed (watchers match on the name). */
+export function remapWatchers<T extends { target: string }>(watchers: T[], from: string, to: string): T[] {
+	return watchers.map((w) => (w.target === from ? { ...w, target: to } : w));
+}
+
 export interface FloorMeta { name: string; repo: string; branch: string; worktreePath: string; ts: number; }
 
 /** One terminal's snapshot file body: a small header + its fenced recent output. */
