@@ -32,8 +32,19 @@ describe('JournalStore', () => {
   it('save overwrites the same slug (no dup)', () => {
     store.save('a', 'A', 'x', 1000);
     store.save('a', 'A2', 'z', 3000);
-    expect(store.list()).toEqual([{ slug: 'a', name: 'A2', updated: 3000 }]);
+    expect(store.list()).toEqual([{ slug: 'a', name: 'A2', created: 1000, updated: 3000 }]);
     expect(store.load('a')!.text).toBe('z');
+  });
+  it('created is the FIRST save time and never moves on later saves', () => {
+    store.save('a', 'A', 'x', 1000);
+    store.save('a', 'A', 'xx', 2000);
+    store.save('a', 'A', 'xxx', 3000);
+    expect(store.list()[0]).toMatchObject({ created: 1000, updated: 3000 });
+  });
+  it('backfills created from updated for legacy index entries', () => {
+    fs.writeFileSync(path.join(dir, 'index.json'), JSON.stringify([{ slug: 'old', name: 'Old', updated: 500 }]), 'utf8');
+    store.save('old', 'Old', 'text', 4000);
+    expect(store.list()[0]).toMatchObject({ slug: 'old', created: 500, updated: 4000 });
   });
   it('remove deletes the doc + index entry', () => {
     store.save('a', 'A', 'x', 1000);

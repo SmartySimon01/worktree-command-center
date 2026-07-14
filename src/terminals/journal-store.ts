@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-export interface JournalMeta { slug: string; name: string; updated: number; }
+export interface JournalMeta { slug: string; name: string; created?: number; updated: number; }
 
 /** Filesystem-safe slug from a display name; 'journal' when empty. De-dup is uniqueSlug's job. */
 export function slugify(name: string): string {
@@ -33,8 +33,11 @@ export class JournalStore {
   save(slug: string, name: string, text: string, now: number): void {
     fs.mkdirSync(this.dir, { recursive: true });
     fs.writeFileSync(this.docPath(slug), text, 'utf8');
+    const prev = this.readIndex().find((m) => m.slug === slug);
     const list = this.readIndex().filter((m) => m.slug !== slug);
-    list.push({ slug, name, updated: now });
+    // created = FIRST save time, immutable across later saves; legacy entries (pre-created
+    // index.json) backfill from their old updated stamp.
+    list.push({ slug, name, created: prev?.created ?? prev?.updated ?? now, updated: now });
     this.writeIndex(list);
   }
   remove(slug: string): void {

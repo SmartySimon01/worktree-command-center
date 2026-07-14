@@ -106,7 +106,7 @@ export class JournalTile implements StageTile {
     for (const m of items) {
       const row = list.createDiv({ cls: 'cos-journal-hist-row' });
       row.createSpan({ cls: 'cos-journal-hist-name', text: m.name });
-      row.createSpan({ cls: 'cos-journal-hist-time', text: new Date(m.updated).toLocaleString() });
+      row.createSpan({ cls: 'cos-journal-hist-time', text: new Date(m.created ?? m.updated).toLocaleString() });
       row.createEl('button', { text: 'open', cls: 'cos-reopen-btn' })
         .addEventListener('click', (e) => { e.stopPropagation(); this.openFromHistory(m.slug); });
       row.createEl('button', { text: '✕', cls: 'cos-close-btn', attr: { title: 'Delete this saved note' } })
