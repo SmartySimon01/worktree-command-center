@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   parseOutboxMessage, resolveTellTarget, slug,
-  formatFloorSnapshot, formatFloorIndex, godSystemPrompt,
+  formatFloorSnapshot, formatFloorIndex, godSystemPrompt, EFFORT_LEVELS,
 } from '../src/terminals/god';
 
 describe('parseOutboxMessage', () => {
@@ -93,5 +93,11 @@ describe('godSystemPrompt', () => {
   it('documents the watch and spawn commands', () => {
     expect(p).toContain('cos-coord watch');
     expect(p).toContain('cos-coord spawn');
+  });
+});
+
+describe('EFFORT_LEVELS', () => {
+  it('lists the six claude CLI effort levels, ultracode last', () => {
+    expect(EFFORT_LEVELS).toEqual(['low', 'medium', 'high', 'xhigh', 'max', 'ultracode']);
   });
 });

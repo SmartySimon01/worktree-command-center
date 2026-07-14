@@ -6,6 +6,10 @@ export function slug(name: string): string {
 	return String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'unnamed';
 }
 
+/** The claude CLI's accepted --effort levels, lowest → highest (ultracode adds
+ *  autonomous multi-agent orchestration on top of max). '' (no flag) = CLI default. */
+export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max', 'ultracode'] as const;
+
 export type OutboxMessage =
 	| { kind: 'tell'; target: string; message: string }
 	| { kind: 'watch'; target: string; note: string }

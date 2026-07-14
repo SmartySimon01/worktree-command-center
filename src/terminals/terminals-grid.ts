@@ -15,7 +15,7 @@ import { emptyState, applyKeystroke, onReady as rqReady, onSubmit as rqSubmit, o
 import { decideCenter, type SpotlightState } from './focus-decider';
 import { partitionByHidden } from './session-partition';
 import { GodConsole } from './god-console';
-import { slug as godSlug, formatFloorSnapshot, formatFloorIndex, parseOutboxMessage, resolveTellTarget, type OutboxMessage } from './god';
+import { slug as godSlug, formatFloorSnapshot, formatFloorIndex, parseOutboxMessage, resolveTellTarget, EFFORT_LEVELS, type OutboxMessage } from './god';
 import { looksLikeMenu, looksErrored, looksBusy } from './prompt-detect';
 import { looksLikePrompt } from './chat-room';
 import { classifyAttention, type AttentionItem } from './attention';
@@ -42,7 +42,7 @@ export interface GridDeps {
 	toast: (msg: string) => void;
 	promptForTopic: (title: string, placeholder: string, initial?: string, okLabel?: string) => Promise<string | null>;
 }
-interface SessionRecord { worktreePath: string; branch: string; repoName: string; repoPath: string; baseBranch: string; name?: string; hidden?: boolean; kind?: 'terminal' | 'journal'; journalSlug?: string; model?: string; }
+interface SessionRecord { worktreePath: string; branch: string; repoName: string; repoPath: string; baseBranch: string; name?: string; hidden?: boolean; kind?: 'terminal' | 'journal'; journalSlug?: string; model?: string; effort?: string; }
 
 // Model options for the spawn toolbar dropdown. Empty value = inherit the claude CLI default.
 const SPAWN_MODELS: { label: string; value: string }[] = [
@@ -51,6 +51,12 @@ const SPAWN_MODELS: { label: string; value: string }[] = [
 	{ label: 'Sonnet 5', value: 'claude-sonnet-5' },
 	{ label: 'Fable 5', value: 'claude-fable-5' },
 	{ label: 'Haiku 4.5', value: 'claude-haiku-4-5-20251001' },
+];
+
+// Effort options for the spawn toolbar dropdown. Empty value = inherit the claude CLI default.
+const SPAWN_EFFORTS: { label: string; value: string }[] = [
+	{ label: 'Effort: Default', value: '' },
+	...EFFORT_LEVELS.map((l) => ({ label: l === 'xhigh' ? 'XHigh' : l[0]!.toUpperCase() + l.slice(1), value: l })),
 ];
 
 // --- Kane personality mode (toggled by his /personality command) ---
@@ -72,6 +78,7 @@ export class TerminalsGrid {
 	private repoSel: HTMLSelectElement | null = null;
 	private branchSel: HTMLSelectElement | null = null;
 	private modelSel: HTMLSelectElement | null = null;
+	private effortSel: HTMLSelectElement | null = null;
 	private stageEl: HTMLElement | null = null;
 	private maxBtn: HTMLElement | null = null;
 	private controlsEl: HTMLElement | null = null;
@@ -153,6 +160,10 @@ export class TerminalsGrid {
 		this.modelSel = controls.createEl('select');
 		this.modelSel.title = 'Model for new terminals';
 		for (const m of SPAWN_MODELS) this.modelSel.createEl('option', { text: m.label, value: m.value });
+
+		this.effortSel = controls.createEl('select');
+		this.effortSel.title = 'Effort for new terminals';
+		for (const m of SPAWN_EFFORTS) this.effortSel.createEl('option', { text: m.label, value: m.value });
 
 		const newBranchBtn = controls.createEl('button', { text: '+ New branch' });
 		newBranchBtn.addEventListener('click', () => {
@@ -367,18 +378,21 @@ export class TerminalsGrid {
 		const repo = this.selectedRepo();
 		const base = this.branchSel?.value;
 		if (!repo || !base) { this.deps.toast('Pick a repo and branch first'); return; }
-		await this.spawnWorktree(repo, base, { model: this.modelSel?.value || undefined });
+		await this.spawnWorktree(repo, base, {});
 	}
 
 	/** Shared spawn core: create a worktree + tile, render, persist, layout. Optionally queue an
 	 *  initial task to send once the new session is first ready. Returns the tile (or null). */
-	private async spawnWorktree(repo: RepoConfig, base: string, opts: { task?: string; model?: string }): Promise<TerminalTile | null> {
+	private async spawnWorktree(repo: RepoConfig, base: string, opts: { task?: string; model?: string; effort?: string }): Promise<TerminalTile | null> {
 		try {
 			const branches = await listBranches(repo.path);
 			const branch = this.pendingNewBranch ?? nextWorktreeBranch(branches, base);
 			this.pendingNewBranch = null;
 			const worktree = await createWorktree(repo.path, repo.name, base, branch, this.notifyScriptPath, this.coordHookPath);
-			const tile = this.makeTile(worktree, repo.name, repo.path, base, false, undefined, opts.model);
+			// Explicit opts win; otherwise inherit the toolbar dropdowns ('' = CLI default = no flag).
+			const model = opts.model ?? (this.modelSel?.value || undefined);
+			const effort = opts.effort ?? (this.effortSel?.value || undefined);
+			const tile = this.makeTile(worktree, repo.name, repo.path, base, false, undefined, model, effort);
 			if (opts.task) this.pendingTask.set(tile.tileId, opts.task);
 			if (this.stageEl) tile.render(this.stageEl);
 			this.tiles.push(tile);
@@ -959,7 +973,7 @@ export class TerminalsGrid {
 	}
 
 	/** Build a tile with all the grid callbacks wired. `resume` → claude --continue. */
-	private makeTile(worktree: WorktreeInfo, repoName: string, repoPath: string, baseBranch: string, resume: boolean, name?: string, model?: string): TerminalTile {
+	private makeTile(worktree: WorktreeInfo, repoName: string, repoPath: string, baseBranch: string, resume: boolean, name?: string, model?: string, effort?: string): TerminalTile {
 		return new TerminalTile({
 			tileId: this.nextTileId++,
 			repoName, repoPath, baseBranch, worktree,
@@ -969,6 +983,7 @@ export class TerminalsGrid {
 			resume,
 			bypassPermissions: this.deps.bypassPermissions,
 			model,
+			effort,
 			name,
 			onRename: () => { void this.persist(); },
 			onRequestRename: (t, cur) => {
@@ -1041,7 +1056,7 @@ export class TerminalsGrid {
 			let exists = false;
 			try { await fs.access(rec.worktreePath); exists = true; } catch { exists = false; }
 			if (!exists) continue;
-			const tile = this.makeTile({ worktreePath: rec.worktreePath, branch: rec.branch }, rec.repoName, rec.repoPath, rec.baseBranch, true, rec.name, rec.model);
+			const tile = this.makeTile({ worktreePath: rec.worktreePath, branch: rec.branch }, rec.repoName, rec.repoPath, rec.baseBranch, true, rec.name, rec.model, rec.effort);
 			try { await writeReadyHook(rec.worktreePath, this.notifyScriptPath, this.coordHookPath); } catch { /* best effort */ }
 			if (this.stageEl) tile.render(this.stageEl);
 			if (rec.hidden) { tile.setHidden(true); this.hidden.push(tile); }
