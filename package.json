@@ -30,6 +30,7 @@
   "build": {
     "appId": "com.ronaldfridlyand.worktree-command-center",
     "productName": "Worktree Command Center",
+    "npmRebuild": false,
     "directories": {
       "output": "release"
     },
