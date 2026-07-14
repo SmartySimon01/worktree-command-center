@@ -10,6 +10,7 @@ export class UsageWidget {
 	private battFill: HTMLElement | null = null;
 	private sessionLabel: HTMLElement | null = null;
 	private weekLabel: HTMLElement | null = null;
+	private fableLabel: HTMLElement | null = null;
 	private refreshBtn: HTMLButtonElement | null = null;
 	private autoBtn: HTMLButtonElement | null = null;
 	private pop: HTMLElement | null = null;
@@ -28,6 +29,7 @@ export class UsageWidget {
 		this.battEl.addEventListener('click', (e) => { e.stopPropagation(); this.togglePop(); });
 		this.sessionLabel = el.createSpan({ cls: 'wcc-usage-session', text: 'tap ⟳ for usage' });
 		this.weekLabel = el.createSpan({ cls: 'wcc-usage-week', text: '' });
+		this.fableLabel = el.createSpan({ cls: 'wcc-usage-week', text: '' });
 		this.autoBtn = el.createEl('button', { cls: 'wcc-usage-auto', text: '⏱', attr: { title: 'Auto-refresh every 60s (off)' } });
 		this.autoBtn.addEventListener('click', (e) => { e.stopPropagation(); this.toggleAuto(); });
 		this.refreshBtn = el.createEl('button', { cls: 'wcc-usage-refresh', text: '⟳', attr: { title: 'Refresh usage' } });
@@ -74,6 +76,7 @@ export class UsageWidget {
 			? 'usage unavailable'
 			: `${left}% left${r.sessionReset ? ` · resets ${r.sessionReset}` : ''}`;
 		this.weekLabel!.textContent = r.weekPct === null ? '' : `Week ${Math.max(0, 100 - r.weekPct)}% left`;
+		this.fableLabel!.textContent = r.fablePct === null ? '' : `Fable ${Math.max(0, 100 - r.fablePct)}% left`;
 		if (this.pop && this.pop.style.display !== 'none') this.renderPop();
 	}
 
@@ -90,6 +93,8 @@ export class UsageWidget {
 		const leftOf = (p: number | null) => (p === null ? '—' : `${Math.max(0, 100 - p)}% left`);
 		row('Session', r.sessionPct === null ? '—' : `${leftOf(r.sessionPct)}${r.sessionReset ? ` · resets ${r.sessionReset}` : ''}`);
 		row('Week', r.weekPct === null ? '—' : `${leftOf(r.weekPct)}${r.weekReset ? ` · resets ${r.weekReset}` : ''}`);
+		// Only plans with a Fable limit render the section — no permanent dash row for the rest.
+		if (r.fablePct !== null) row('Week (Fable)', `${leftOf(r.fablePct)}${r.fableReset ? ` · resets ${r.fableReset}` : ''}`);
 		row('Credits', r.creditsSpent ? `${r.creditsSpent}${r.creditsReset ? ` · resets ${r.creditsReset}` : ''}` : (r.creditsPct === null ? '—' : `${r.creditsPct}% used`));
 		this.pop.createDiv({ cls: 'wcc-usage-popnote', text: 'approx · this machine only' });
 	}

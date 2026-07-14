@@ -10,6 +10,7 @@ import { AttentionWidget } from './ui/attention-widget';
 import { WorkspaceBar } from './ui/workspace-bar';
 import { normalizeWorkspaces, addWorkspace, closeWorkspace, nextActiveAfter, type Workspace } from './terminals/workspace-store';
 import * as path from 'path';
+import * as fs from 'fs';
 import { registerPrivateFeatures } from 'wcc-private';
 import type { SessionEnvProvider } from './private-api';
 
@@ -62,9 +63,13 @@ async function main(): Promise<void> {
 		const startUsageProbe = (): void => {
 			usageWidget?.dispose(); usageProbe?.dispose();
 			usageHost.empty();
+			// Dedicated cwd: the probe spawns a session per refresh, and those must not litter a
+			// real repo's `claude --resume` history (the old repos[0] cwd did exactly that).
+			const probeCwd = path.join(userData, 'usage-probe');
+			try { fs.mkdirSync(probeCwd, { recursive: true }); } catch { /* best effort */ }
 			usageProbe = new UsageProbe({
 				sidecarPath: path.join(sidecarDir, 'sidecar.cjs'),
-				cwd: repos[0]?.path ?? userData,
+				cwd: probeCwd,
 				sessionEnv: () => sessionEnvProvider({ workspaceId: activeId }),
 			});
 			usageWidget = new UsageWidget(usageProbe);

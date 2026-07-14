@@ -5,6 +5,8 @@ export interface UsageReadout {
 	sessionReset: string | null; // e.g. "3:50am (America/New_York)"
 	weekPct: number | null;      // current week, all models
 	weekReset: string | null;    // e.g. "Jun 15, 12am (America/New_York)"
+	fablePct: number | null;     // current week, Fable only (null when the plan has no Fable section)
+	fableReset: string | null;   // usually the same boundary as the week
 	creditsPct: number | null;   // extra-usage credits balance
 	creditsSpent: string | null; // e.g. "$13.88 / $15.00"
 	creditsReset: string | null; // e.g. "Jul 1 (America/New_York)"
@@ -32,10 +34,11 @@ function pctIn(s: string): number | null {
 }
 
 function resetIn(s: string): string | null {
-	// Prefer "Resets <…>(timezone)"; fall back to a short run after "Resets".
-	const m = /resets\s*([^\n]*?\([^)]+\))/i.exec(s);
+	// Prefer "Resets <…>(timezone)"; fall back to a short run after "Resets". The optional
+	// 'e' ("Rese?ts") tolerates cell-positioned TUI redraws that strip to "Rests" mid-word.
+	const m = /rese?ts\s*([^\n]*?\([^)]+\))/i.exec(s);
 	if (m) return m[1].replace(/\s+/g, ' ').trim();
-	const m2 = /resets\s*([^\n]{1,40})/i.exec(s);
+	const m2 = /rese?ts\s*([^\n]{1,40})/i.exec(s);
 	return m2 ? m2[1].replace(/\s+/g, ' ').trim() : null;
 }
 
@@ -48,12 +51,15 @@ export function parseUsage(text: string): UsageReadout {
 	const t = stripAnsi(text);
 	const sess = sectionAfter(t, /current\s*session/i);
 	const week = sectionAfter(t, /current\s*week\s*\(?\s*all\s*models\)?/i);
+	const fable = sectionAfter(t, /current\s*week\s*\(\s*fable\s*\)/i);
 	const credits = sectionAfter(t, /usage\s*credits/i);
 	return {
 		sessionPct: pctIn(sess),
 		sessionReset: resetIn(sess),
 		weekPct: pctIn(week),
 		weekReset: resetIn(week),
+		fablePct: pctIn(fable),
+		fableReset: resetIn(fable),
 		creditsPct: pctIn(credits),
 		creditsSpent: spentIn(credits),
 		creditsReset: resetIn(credits),
