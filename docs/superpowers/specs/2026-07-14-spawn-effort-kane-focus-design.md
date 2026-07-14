@@ -67,7 +67,7 @@ Alt+K opens/focuses Kane.
   `focusin`/`focusout` on the panel root (same pattern as `terminal-tile.ts:184-185`).
 - `TerminalsGrid` tracks `private focusedKane: GodConsole | null` — the instance (primary
   or duplicate) that holds keyboard focus — set by each console's callback.
-- `autoCenter()` passes `userTyping: this.q.composingLen > 0 || this.godFocused` — Kane
+- `autoCenter()` passes `userTyping: this.q.composingLen > 0 || this.focusedKane !== null` — Kane
   holding focus now rides the same tested "mid-type → hold" rule in `decideCenter`
   (`focus-decider.ts:38`). No layout yank, no focus steal, ready-stack state unaffected
   (the ready tile still gets the spotlight once Kane is blurred).
