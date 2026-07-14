@@ -51,23 +51,28 @@ export class GodConsole {
 		const saved = Number(window.localStorage.getItem('cos-god-width'));
 		if (Number.isFinite(saved) && saved >= 280) this.el.style.flex = `0 0 ${Math.round(saved)}px`;
 		const grip = this.el.createDiv({ cls: 'cos-god-resize' });
-		grip.addEventListener('mousedown', (e) => {
+		grip.addEventListener('pointerdown', (e) => {
 			e.preventDefault();
 			const startX = e.clientX;
-			const startW = this.el!.getBoundingClientRect().width;
+			const startW = this.el?.getBoundingClientRect().width ?? 0;
+			grip.setPointerCapture(e.pointerId); // pointerup arrives even if released outside the window
 			grip.classList.add('dragging');
-			const move = (ev: MouseEvent): void => {
+			const move = (ev: PointerEvent): void => {
+				if (!this.el) return; // disposed mid-drag
 				const w = Math.min(Math.max(280, startW + (startX - ev.clientX)), Math.round(window.innerWidth * 0.7));
-				this.el!.style.flex = `0 0 ${Math.round(w)}px`;
+				this.el.style.flex = `0 0 ${Math.round(w)}px`;
 			};
-			const up = (): void => {
+			const up = (ev: PointerEvent): void => {
 				grip.classList.remove('dragging');
-				document.removeEventListener('mousemove', move);
-				document.removeEventListener('mouseup', up);
-				window.localStorage.setItem('cos-god-width', String(Math.round(this.el!.getBoundingClientRect().width)));
+				grip.removeEventListener('pointermove', move);
+				grip.removeEventListener('pointerup', up);
+				grip.removeEventListener('pointercancel', up);
+				try { grip.releasePointerCapture(ev.pointerId); } catch { /* already released */ }
+				if (this.el) window.localStorage.setItem('cos-god-width', String(Math.round(this.el.getBoundingClientRect().width)));
 			};
-			document.addEventListener('mousemove', move);
-			document.addEventListener('mouseup', up);
+			grip.addEventListener('pointermove', move);
+			grip.addEventListener('pointerup', up);
+			grip.addEventListener('pointercancel', up);
 		});
 		const head = this.el.createDiv({ cls: 'cos-god-head' });
 		head.createSpan({ text: `🜲 ${this.opts.instanceName ?? 'Kane'}` });

@@ -142,7 +142,7 @@ Alt+K opens/focuses Kane.
 - `.cos-god-panel` is a fixed flex column (`flex:0 0 380px`, `styles.css:854`). Every
   Kane panel gets a 6 px left-edge grip (`.cos-god-resize`, `cursor: ew-resize`; the
   panel gains `position:relative`).
-- Drag: `mousedown` on the grip → document-level `mousemove`/`mouseup`; new width =
+- Drag: `pointerdown` on the grip captures the pointer (`setPointerCapture`), so move/up events keep arriving even when the button is released outside the window — no document-level listeners to leak; new width =
   startWidth + (startX − clientX) (panels dock on the right), clamped to
   [280 px, 70 % of the window], applied as `flex: 0 0 <px>px`. The body's existing
   `ResizeObserver` refits xterm live during the drag.
