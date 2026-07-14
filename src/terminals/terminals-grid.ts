@@ -59,6 +59,9 @@ const SPAWN_EFFORTS: { label: string; value: string }[] = [
 	...EFFORT_LEVELS.map((l) => ({ label: l === 'xhigh' ? 'XHigh' : l[0]!.toUpperCase() + l.slice(1), value: l })),
 ];
 
+// How long a manual tile choice (click / Alt+F-key / resurfacing) suppresses auto-centering.
+const MANUAL_HOLD_MS = 30_000;
+
 // --- Kane personality mode (toggled by his /personality command) ---
 const KANE_PERSONA_ON =
 	'[personality: ON] Speak as Kane the forge-master from now on — terse, gruff, dry, in command ' +
@@ -105,6 +108,8 @@ export class TerminalsGrid {
 	private godBtn: HTMLButtonElement | null = null;
 	private godConsole: GodConsole | null = null;
 	private godVisible = false;
+	private godFocused = false;          // Kane's terminal holds keyboard focus right now
+	private holdUntil = 0;               // epoch ms: autoCenter is suppressed until then
 	private kanePersonality = false;          // off = Kane behaves exactly as today (no persona, no pulses)
 	private pulseTimer: number | null = null;
 	private readonly pulseMs = 12 * 60 * 1000; // proactive floor-pulse cadence while personality is on
@@ -191,7 +196,7 @@ export class TerminalsGrid {
 		// this.selectBtn.addEventListener('click', () => this.setSelecting(!this.selecting));
 
 		this.godBtn = controls.createEl('button', { text: '🜲 Kane', cls: 'cos-god-btn' });
-		this.godBtn.setAttribute('title', 'Open the Kane overseer console — sees the whole floor, acts on request');
+		this.godBtn.setAttribute('title', 'Open the Kane overseer console — sees the whole floor, acts on request (Alt+K)');
 		this.godBtn.addEventListener('click', () => this.toggleGod());
 
 		const viewCode = controls.createEl('button', { text: '🧩 View Code' });
@@ -298,6 +303,7 @@ export class TerminalsGrid {
 	 *  terminal is thinking (the stack is empty then, which is why the old cycle couldn't).
 	 *  Landing on a tile pins it so the auto-decider won't immediately yank it back. */
 	private cycleSpotlight(dir: 1 | -1): void {
+		this.holdUntil = 0; // Alt+←/→ = back in the flow; cycling never pins for long
 		const chatId = this.chatTile?.tileId;
 		const ids = [...this.tiles.map((t) => t.tileId), ...(chatId !== undefined ? [chatId] : [])];
 		if (ids.length === 0) return;
@@ -317,6 +323,9 @@ export class TerminalsGrid {
 			if (e.key === 'ArrowRight') { e.preventDefault(); this.cycleSpotlight(1); return; }
 			if (e.key === 'ArrowLeft') { e.preventDefault(); this.cycleSpotlight(-1); return; }
 			if (e.key === 'l' || e.key === 'L') { e.preventDefault(); if (this.centeredId !== null) this.toggleLockById(this.centeredId); return; }
+			// Alt+K opens/focuses Kane. Kane wins this key — the letter-badge jumps only reach 'K'
+			// with 23+ visible tiles, which never happens in practice.
+			if (e.key === 'k' || e.key === 'K') { e.preventDefault(); this.openKane(); return; }
 			const norm = e.key.length === 1 ? e.key.toUpperCase() : e.key;
 			const idx = keyToIndex(norm);
 			if (idx !== null && this.tiles[idx]) { e.preventDefault(); this.handleClick(this.tiles[idx]!.tileId); }
@@ -331,7 +340,7 @@ export class TerminalsGrid {
 		if (this.spotlightTimer === null) this.spotlightTimer = window.setInterval(() => this.autoCenter(), 1000);
 		// When the OS window regains focus (alt-tab back in), put the cursor back into the
 		// centered terminal — Electron otherwise restores it to whatever tile had it before.
-		this.onWinFocus = () => this.focusCentered();
+		this.onWinFocus = () => { if (this.godFocused && this.godVisible) this.godConsole?.focus(); else this.focusCentered(); };
 		window.addEventListener('focus', this.onWinFocus);
 		// Leaving Obsidian entirely (alt-tab to another app) also releases the typing-hold,
 		// so terminals keep bubbling while you're working elsewhere.
@@ -478,6 +487,7 @@ export class TerminalsGrid {
 		this.q = r.state;
 		this.q.composingLen = 0;
 		this.doCenter(r.center);
+		this.holdUntil = Date.now() + MANUAL_HOLD_MS; // an explicit choice — hold the spotlight here
 	}
 
 	private updateChatBtn(): void {
@@ -603,7 +613,7 @@ export class TerminalsGrid {
 		if (!this.godConsole) {
 			const godHomeDir = path.join(this.coordDir, '..', '.god', this.deps.group);
 			this.godConsole = new GodConsole(
-				{ repos: this.repos.map((r) => ({ name: r.name, path: r.path })), coordDir: this.coordDir, sidecarPath: this.sidecarPath, godHomeDir, sessionEnv: this.deps.sessionEnv },
+				{ repos: this.repos.map((r) => ({ name: r.name, path: r.path })), coordDir: this.coordDir, sidecarPath: this.sidecarPath, godHomeDir, sessionEnv: this.deps.sessionEnv, onFocusChange: (f) => { this.godFocused = f; } },
 				() => this.hideGod(),
 			);
 			if (this.stageWrapEl) this.godConsole.render(this.stageWrapEl);
@@ -616,6 +626,13 @@ export class TerminalsGrid {
 		}
 		if (this.godVisible) this.hideGod();
 		else this.showGod();
+	}
+
+	/** Alt+K: open Kane if needed and put the cursor in his terminal. Never closes him. */
+	private openKane(): void {
+		if (!this.godConsole) { this.toggleGod(); return; } // first open creates + focuses
+		if (!this.godVisible) this.showGod();               // setVisible(true) refits + refocuses
+		this.godConsole.focus();
 	}
 
 	private showGod(): void {
@@ -879,11 +896,12 @@ export class TerminalsGrid {
 	 *  tile: a tile that needs you wins, and when everyone is thinking the grid drops to equal
 	 *  size (no spotlight). Manual clicks/cycles still set the center directly. */
 	private autoCenter(): void {
+		if (Date.now() < this.holdUntil) return; // manual-switch hold — the user chose a tile, let it be
 		const want = decideCenter({
 			tiles: this.tiles.map((t) => ({ id: t.tileId, state: this.spotlightState(t) })),
 			centeredId: this.centeredId,
 			readyOrder: this.q.stack,
-			userTyping: this.q.composingLen > 0,
+			userTyping: this.q.composingLen > 0 || this.godFocused,
 			globalLock: this.locked,
 			lockedTileId: this.lockedTileId,
 		});
@@ -923,6 +941,7 @@ export class TerminalsGrid {
 		// submitting a prompt — don't bubble focus away, so a multi-select can be finished in one
 		// go. (The Lock button does this globally; this does it automatically for menus.)
 		if (looksLikeMenu(t.recentOutput())) return;
+		this.holdUntil = 0; // prompt submitted — manual engagement over, the flow resumes
 		this.q = rqSubmit(this.q, t.tileId).state; // finished with it → off the ready stack
 		// Re-derive: center the next tile that needs you, or drop to the equal grid if everyone
 		// is now thinking (nobody is waiting on you).
@@ -959,6 +978,7 @@ export class TerminalsGrid {
 		this.centeredId = tile.tileId;
 		this.applyLayout();
 		this.focusCentered();
+		this.holdUntil = Date.now() + MANUAL_HOLD_MS; // resurfacing is an explicit choice too
 		void this.persist();
 		this.board?.refresh();
 	}

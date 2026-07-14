@@ -16,6 +16,7 @@ export interface GodConsoleOpts {
 	sidecarPath: string;
 	godHomeDir: string;   // a neutral cwd outside every repo
 	sessionEnv?: () => Record<string, string>;
+	onFocusChange?: (focused: boolean) => void;
 }
 
 /** GOD: a single privileged claude session in a docked side panel. Real terminal — the
@@ -39,6 +40,10 @@ export class GodConsole {
 
 	render(parent: HTMLElement): void {
 		this.el = parent.createDiv({ cls: 'cos-god-panel' });
+		// Report keyboard-focus changes so the grid can hold auto-centering while the user is
+		// typing to Kane (mirrors terminal-tile's focusin/focusout wiring).
+		this.el.addEventListener('focusin', () => this.opts.onFocusChange?.(true));
+		this.el.addEventListener('focusout', () => this.opts.onFocusChange?.(false));
 		const head = this.el.createDiv({ cls: 'cos-god-head' });
 		head.createSpan({ text: '🜲 Kane' });
 		const refreshBtn = head.createEl('button', { text: '⟳', cls: 'cos-term-refresh', attr: { title: 'Refresh Kane — reload with --continue (keeps the conversation)' } });
