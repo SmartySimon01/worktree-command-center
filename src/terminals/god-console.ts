@@ -17,6 +17,8 @@ export interface GodConsoleOpts {
 	godHomeDir: string;   // a neutral cwd outside every repo
 	sessionEnv?: () => Record<string, string>;
 	onFocusChange?: (focused: boolean) => void;
+	instanceName?: string;   // head label + COS_TERMINAL_NAME (default 'Kane')
+	terminalId?: string;     // COS_TERMINAL_ID for cos-coord identity (default '0')
 }
 
 /** GOD: a single privileged claude session in a docked side panel. Real terminal — the
@@ -45,7 +47,7 @@ export class GodConsole {
 		this.el.addEventListener('focusin', () => this.opts.onFocusChange?.(true));
 		this.el.addEventListener('focusout', () => this.opts.onFocusChange?.(false));
 		const head = this.el.createDiv({ cls: 'cos-god-head' });
-		head.createSpan({ text: '🜲 Kane' });
+		head.createSpan({ text: `🜲 ${this.opts.instanceName ?? 'Kane'}` });
 		const refreshBtn = head.createEl('button', { text: '⟳', cls: 'cos-term-refresh', attr: { title: 'Refresh Kane — reload with --continue (keeps the conversation)' } });
 		refreshBtn.addEventListener('click', (e) => { e.stopPropagation(); void this.refresh(); });
 		const hide = head.createEl('button', { text: '×', attr: { title: 'Hide Kane (session keeps running)' } });
@@ -138,8 +140,8 @@ export class GodConsole {
 		const env: Record<string, string> = {
 			...safeSessionEnv(this.opts.sessionEnv),
 			COS_COORD_DIR: this.opts.coordDir,
-			COS_TERMINAL_ID: '0',
-			COS_TERMINAL_NAME: 'Kane',
+			COS_TERMINAL_ID: this.opts.terminalId ?? '0',
+			COS_TERMINAL_NAME: this.opts.instanceName ?? 'Kane',
 			COS_ROLE: 'god',
 			PATH: sidecarDir + path.delimiter + (process.env.PATH ?? ''),
 		};
@@ -153,7 +155,7 @@ export class GodConsole {
 				this.startSession(false);
 				return;
 			}
-			this.term?.write(`\r\n[Kane session ended (code ${code ?? '?'})]\r\n`);
+			this.term?.write(`\r\n[${this.opts.instanceName ?? 'Kane'} session ended (code ${code ?? '?'})]\r\n`);
 		});
 		this.bridge.start();
 	}

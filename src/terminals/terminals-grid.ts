@@ -109,6 +109,8 @@ export class TerminalsGrid {
 	private godConsole: GodConsole | null = null;
 	private godVisible = false;
 	private godFocused = false;          // Kane's terminal holds keyboard focus right now
+	private extraKanes: GodConsole[] = [];
+	private kaneSeq = 1; // monotonic: duplicates are Kane 2, 3, … — numbers never reused in-session
 	private holdUntil = 0;               // epoch ms: autoCenter is suppressed until then
 	private kanePersonality = false;          // off = Kane behaves exactly as today (no persona, no pulses)
 	private pulseTimer: number | null = null;
@@ -198,6 +200,10 @@ export class TerminalsGrid {
 		this.godBtn = controls.createEl('button', { text: '🜲 Kane', cls: 'cos-god-btn' });
 		this.godBtn.setAttribute('title', 'Open the Kane overseer console — sees the whole floor, acts on request (Alt+K)');
 		this.godBtn.addEventListener('click', () => this.toggleGod());
+
+		const kaneDupBtn = controls.createEl('button', { text: '🜲+', cls: 'cos-god-btn' });
+		kaneDupBtn.setAttribute('title', 'Add another Kane console — a separate session in its own panel (close it with its ×)');
+		kaneDupBtn.addEventListener('click', () => this.addKane());
 
 		const viewCode = controls.createEl('button', { text: '🧩 View Code' });
 		viewCode.addEventListener('click', () => this.openInVSCode());
@@ -635,6 +641,42 @@ export class TerminalsGrid {
 		this.godConsole.focus();
 	}
 
+	/** Dock an ADDITIONAL Kane console — its own session + home dir. Duplicates are cheap:
+	 *  the × disposes them entirely and they are not persisted across app restarts. */
+	private addKane(): void {
+		const n = ++this.kaneSeq;
+		const godHomeDir = path.join(this.coordDir, '..', '.god', `${this.deps.group}-${n}`);
+		const kane = new GodConsole(
+			{
+				repos: this.repos.map((r) => ({ name: r.name, path: r.path })),
+				coordDir: this.coordDir,
+				sidecarPath: this.sidecarPath,
+				godHomeDir,
+				sessionEnv: this.deps.sessionEnv,
+				onFocusChange: (f) => { this.godFocused = f; },
+				instanceName: `Kane ${n}`,
+				terminalId: String(-n),
+			},
+			() => {
+				kane.dispose();
+				this.extraKanes = this.extraKanes.filter((k) => k !== kane);
+				this.applyLayout();
+			},
+		);
+		if (this.stageWrapEl) kane.render(this.stageWrapEl);
+		this.extraKanes.push(kane);
+		this.startFloorFeed();
+		this.applyLayout();
+		kane.focus();
+	}
+
+	/** Ping the primary Kane and every duplicate (they share the god role — any of them
+	 *  may have registered the watch or flipped the personality). */
+	private notifyKanes(text: string): void {
+		this.godConsole?.notify(text);
+		for (const k of this.extraKanes) k.notify(text);
+	}
+
 	private showGod(): void {
 		this.godVisible = true;
 		this.godConsole?.setVisible(true);
@@ -755,10 +797,10 @@ export class TerminalsGrid {
 	private togglePersonality(): void {
 		this.kanePersonality = !this.kanePersonality;
 		if (this.kanePersonality) {
-			this.godConsole?.notify(KANE_PERSONA_ON);
+			this.notifyKanes(KANE_PERSONA_ON);
 			this.startPulse();
 		} else {
-			this.godConsole?.notify(KANE_PERSONA_OFF);
+			this.notifyKanes(KANE_PERSONA_OFF);
 			this.stopPulse();
 		}
 	}
@@ -768,7 +810,7 @@ export class TerminalsGrid {
 	private startPulse(): void {
 		if (this.pulseTimer !== null) return;
 		this.pulseTimer = window.setInterval(() => {
-			if (this.kanePersonality && this.godVisible) this.godConsole?.notify(KANE_PULSE);
+			if (this.kanePersonality && this.godVisible) this.notifyKanes(KANE_PULSE);
 		}, this.pulseMs);
 	}
 
@@ -917,7 +959,7 @@ export class TerminalsGrid {
 			if (!looksLikePrompt(out) && !looksLikeMenu(out)) {
 				const fired = this.watchers.filter((w) => w.target === t.name);
 				this.watchers = this.watchers.filter((w) => w.target !== t.name);
-				for (const w of fired) this.godConsole?.notify(`[watch] terminal "${t.name}" finished — you asked: ${w.note}`);
+				for (const w of fired) this.notifyKanes(`[watch] terminal "${t.name}" finished — you asked: ${w.note}`);
 			}
 		}
 		// Deliver a Kane-spawned terminal's initial task once it's first ready.
@@ -1105,6 +1147,8 @@ export class TerminalsGrid {
 		this.stopPulse();
 		this.stopFloorFeed(); // feed now persists across unmount()/hideGod(), so stop it on real teardown
 		this.godConsole?.dispose(); this.godConsole = null;
+		for (const k of this.extraKanes) k.dispose();
+		this.extraKanes = [];
 		for (const t of this.tiles) t.kill();
 		for (const t of this.hidden) t.kill();
 		this.tiles = [];
