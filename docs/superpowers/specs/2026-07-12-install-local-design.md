@@ -59,6 +59,11 @@ Rejected:
   launches the app the moment the installer finishes. Nothing may auto-open the app,
   including a plain double-clicked install run by hand outside `install-local`, so this
   is set unconditionally in `build.nsis`, not left to the script to suppress.
+- `npmRebuild: false` — electron-builder's default rebuilds native deps for Electron's
+  ABI, but no code in the Electron process loads a native module: `node-pty`'s only
+  consumer is the sidecar, which runs under system `node.exe` and gets its own stock
+  N-API copy via `extraResources`. The rebuild was pure waste — and node-gyp falling
+  back to a source build made packaging fail on machines where that toolchain is cold.
 
 ## 2. `npm run install-local` (`scripts/install-local.mjs`)
 
