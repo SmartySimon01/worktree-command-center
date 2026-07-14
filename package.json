@@ -10,7 +10,8 @@
     "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs",
     "start": "npm run build && electron .",
     "test": "vitest run",
-    "dist": "node scripts/check-no-private.mjs && npm run build && electron-builder --win"
+    "dist": "node scripts/check-no-private.mjs && npm run build && electron-builder --win",
+    "install-local": "node scripts/install-local.mjs"
   },
   "devDependencies": {
     "@types/node": "^20.19.41",
@@ -29,6 +30,28 @@
   "build": {
     "appId": "com.ronaldfridlyand.worktree-command-center",
     "productName": "Worktree Command Center",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "index.html",
+      "app.css",
+      "styles.css",
+      "assets/**"
+    ],
+    "extraResources": [
+      {
+        "from": "pty-sidecar",
+        "to": "pty-sidecar",
+        "filter": ["**/*", "!contexts/**"]
+      },
+      {
+        "from": "node_modules/node-pty",
+        "to": "pty-sidecar/node_modules/node-pty",
+        "filter": ["**/*", "!build/**", "!src/**", "!deps/**", "!third_party/**"]
+      }
+    ],
     "win": {
       "icon": "assets/icon.ico",
       "target": "nsis"
@@ -36,7 +59,8 @@
     "nsis": {
       "installerIcon": "assets/icon.ico",
       "uninstallerIcon": "assets/icon.ico",
-      "shortcutName": "Worktree Command Center"
+      "shortcutName": "Worktree Command Center",
+      "runAfterFinish": false
     }
   }
 }
