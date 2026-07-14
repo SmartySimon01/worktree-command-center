@@ -1,9 +1,9 @@
-import { SessionBridge } from './session-bridge';
+import { SessionBridge, safeSessionEnv } from './session-bridge';
 import { stripAnsi } from './usage-parse';
 import * as fs from 'fs';
 import * as path from 'path';
 
-export interface FormatProbeOpts { sidecarPath: string; cwd: string; }
+export interface FormatProbeOpts { sidecarPath: string; cwd: string; sessionEnv?: () => Record<string, string>; }
 
 /** Strict reformat-only instruction that points Claude at the note FILE. The note content never
  *  rides the command line — on Windows the sidecar runs `cmd.exe /c claude …`, which would
@@ -44,7 +44,8 @@ export class FormatProbe {
       const cleanup = (): void => { try { fs.unlinkSync(tmp); } catch { /* already gone */ } };
       const bridge = new SessionBridge(
         this.opts.sidecarPath, this.opts.cwd, 'claude',
-        ['-p', buildFormatPrompt(tmp), '--output-format', 'text', '--allowedTools', 'Read'], {},
+        ['-p', buildFormatPrompt(tmp), '--output-format', 'text', '--allowedTools', 'Read'],
+        safeSessionEnv(this.opts.sessionEnv),
       );
       let buf = '';
       let done = false;

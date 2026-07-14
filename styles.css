@@ -851,11 +851,13 @@
    the bottom of the page. */
 .cos-stage-wrap { flex:1 1 auto; min-height:0; display:flex; gap:10px; align-items:stretch; }
 .cos-stage-wrap > .cos-terminals-stage { flex:1 1 auto; min-width:0; height:100%; min-height:0; }
-.cos-god-panel { flex:0 0 380px; min-height:0; display:flex; flex-direction:column; min-width:0; background:#0e0f17; border:1px solid var(--background-modifier-border); border-radius:10px; overflow:hidden; }
+.cos-god-panel { position:relative; flex:0 0 380px; min-height:0; display:flex; flex-direction:column; min-width:0; background:#0e0f17; border:1px solid var(--background-modifier-border); border-radius:10px; overflow:hidden; }
 .cos-god-head { display:flex; align-items:center; justify-content:space-between; padding:5px 10px; background:#171925; color:#e7c97a; font-weight:600; letter-spacing:.04em; }
 .cos-god-head button { background:transparent; border:none; color:var(--text-muted); cursor:pointer; font-size:14px; }
 .cos-god-head button:hover { color:#fff; }
 .cos-god-body { flex:1; min-height:0; padding:4px; }
+.cos-god-resize { position:absolute; left:0; top:0; bottom:0; width:6px; cursor:ew-resize; z-index:5; }
+.cos-god-resize:hover, .cos-god-resize.dragging { background:rgba(120,140,255,0.25); }
 .cos-god-btn.cos-god-on { background:#3a2d10; color:#f4d35e; font-weight:600; }
 
 /* --- bubbling stage (phase 2) --- */
@@ -920,3 +922,5 @@
 .cos-chat-inputrow { border-top:1px solid var(--background-modifier-border); padding:8px; }
 .cos-chat-tile.paused .cos-chat-inputrow { background:rgba(245,166,35,.08); }
 .cos-chat-inputrow input { width:100%; box-sizing:border-box; background:#1a1c28; border:1px solid #34374d; border-radius:18px; padding:8px 12px; color:#fff; font-size:12px; }
+
+.wcc-usage-host { display: contents; }

@@ -11,6 +11,9 @@ import { SettingsPanel } from './ui/settings-panel';
 import { ChangelogPanel } from './ui/changelog-panel';
 import { normalizeWorkspaces, addWorkspace, closeWorkspace, nextActiveAfter, type Workspace } from './terminals/workspace-store';
 import * as path from 'path';
+import * as fs from 'fs';
+import { registerPrivateFeatures } from 'wcc-private';
+import type { SessionEnvProvider } from './private-api';
 
 declare global {
 	interface Window {
@@ -44,16 +47,37 @@ async function main(): Promise<void> {
 		const addFolderBtn = topBar.createEl('button', { cls: 'wcc-add', text: '➕ Add folder' });
 		const statusSpan = topBar.createSpan({ cls: 'wcc-status', text: `${repos.length} repos` });
 
-		// Usage battery (account-level; shared across workspaces).
-		const usageProbe = new UsageProbe({ sidecarPath: path.join(sidecarDir, 'sidecar.cjs'), cwd: repos[0]?.path ?? userData });
-		const usageWidget = new UsageWidget(usageProbe);
-		usageWidget.render(topBar);
-		window.addEventListener('beforeunload', () => { usageWidget.dispose(); usageProbe.dispose(); });
-
 		// --- workspaces ---
 		let workspaces: Workspace[] = normalizeWorkspaces(cfg.workspaces);
 		let activeId = workspaces.some((w) => w.id === cfg.activeWorkspace) ? (cfg.activeWorkspace as string) : workspaces[0]!.id;
 		const grids = new Map<string, TerminalsGrid>();
+
+		// Session-env provider (see docs/superpowers/specs/2026-07-13-session-env-provider-design.md).
+		// Overlay-replaceable; consulted lazily at each spawn through safeSessionEnv at the call sites.
+		let sessionEnvProvider: SessionEnvProvider = () => ({});
+		const wsSwitchCbs: Array<(id: string) => void> = [];
+
+		// Usage battery (follows the ACTIVE workspace's session env; restartable by the overlay).
+		const usageHost = topBar.createDiv({ cls: 'wcc-usage-host' });
+		let usageProbe: UsageProbe | null = null;
+		let usageWidget: UsageWidget | null = null;
+		const startUsageProbe = (): void => {
+			usageWidget?.dispose(); usageProbe?.dispose();
+			usageHost.empty();
+			// Dedicated cwd: the probe spawns a session per refresh, and those must not litter a
+			// real repo's `claude --resume` history (the old repos[0] cwd did exactly that).
+			const probeCwd = path.join(userData, 'usage-probe');
+			try { fs.mkdirSync(probeCwd, { recursive: true }); } catch { /* best effort */ }
+			usageProbe = new UsageProbe({
+				sidecarPath: path.join(sidecarDir, 'sidecar.cjs'),
+				cwd: probeCwd,
+				sessionEnv: () => sessionEnvProvider({ workspaceId: activeId }),
+			});
+			usageWidget = new UsageWidget(usageProbe);
+			usageWidget.render(usageHost);
+		};
+		startUsageProbe();
+		window.addEventListener('beforeunload', () => { usageWidget?.dispose(); usageProbe?.dispose(); });
 
 		const depsFor = (id: string): GridDeps => ({
 			repos,
@@ -64,6 +88,7 @@ async function main(): Promise<void> {
 			coordHookPath: path.join(sidecarDir, 'coord-hook.cjs'),
 			sessionsFile: path.join(userData, '.terminal-sessions.json'),
 			bypassPermissions: true,
+			sessionEnv: () => sessionEnvProvider({ workspaceId: id }),
 			toast,
 			promptForTopic,
 			openSettings: () => void settingsPanel.open(appEl),
@@ -75,7 +100,9 @@ async function main(): Promise<void> {
 		};
 		let activeGrid = gridFor(activeId);
 
-		const persist = (): void => void window.wcc.setConfig({ ...cfg, repos, workspaces, activeWorkspace: activeId });
+		// Merge over a FRESH read: other writers (e.g. the private overlay via PrivateApi.config.set)
+		// must not have their keys clobbered by this startup-snapshot spread.
+		const persist = (): void => void window.wcc.getConfig().then((fresh) => window.wcc.setConfig({ ...fresh, repos, workspaces, activeWorkspace: activeId }));
 
 		// Attention queue reads whichever grid is ACTIVE (closures over the mutable activeGrid).
 		const attention = new AttentionWidget(() => activeGrid.attentionItems(), (tileId) => activeGrid.revealTile(tileId));
@@ -122,6 +149,7 @@ async function main(): Promise<void> {
 			await activeGrid.mount(gridContainer);
 			bar.refresh();
 			persist();
+			for (const cb of wsSwitchCbs) { try { cb(id); } catch { /* overlay callback must not break switching */ } }
 		}
 
 		async function onAdd(): Promise<void> {
@@ -146,6 +174,29 @@ async function main(): Promise<void> {
 			grids.delete(id);
 			workspaces = closeWorkspace(workspaces, id);
 			if (id === activeId) { void switchTo(target); } else { persist(); bar.refresh(); }
+		}
+
+		// Private overlay (see README "Private extensions"): must never take down the app.
+		// Runs BEFORE the first mount so a provider set here applies to restored sessions.
+		try {
+			registerPrivateFeatures({
+				topBar,
+				activeGrid: () => activeGrid,
+				config: { get: () => window.wcc.getConfig(), set: (c) => window.wcc.setConfig(c) },
+				initialConfig: cfg,
+				toast,
+				promptForTopic,
+				userData,
+				sidecarDir,
+				setSessionEnv: (p) => { sessionEnvProvider = p; },
+				activeWorkspaceId: () => activeId,
+				onWorkspaceSwitch: (cb) => { wsSwitchCbs.push(cb); },
+				restartUsageProbe: () => startUsageProbe(),
+				workspaceIds: () => workspaces.map((w) => w.id),
+				restartSessions: (ids) => { for (const id of ids) grids.get(id)?.restartSessions(); },
+			});
+		} catch (e) {
+			toast('Private features failed to load: ' + e);
 		}
 
 		await activeGrid.mount(gridContainer);

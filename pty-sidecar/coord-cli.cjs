@@ -59,7 +59,18 @@ function main() {
     const repo = resource;
     const base = flag(rest, '--base') || '';
     const task = flag(rest, '--task') || '';
-    if (repo && task) store.spawn(dir, repo, base, task);
+    const model = flag(rest, '--model') || '';
+    const effort = flag(rest, '--effort') || '';
+    const name = flag(rest, '--name') || '';
+    if (repo && task) store.spawn(dir, repo, base, task, model, effort, name);
+    process.exit(0);
+  }
+
+  if (cmd === 'rename') {
+    if (env('COS_ROLE') !== 'god') process.exit(0); // only GOD may rename worker terminals
+    const target = resource;
+    const to = flag(rest, '--to') || '';
+    if (target && to.trim()) store.rename(dir, target, to);
     process.exit(0);
   }
 
@@ -84,7 +95,7 @@ function main() {
     process.exit(0);
   }
 
-  console.error('usage: cos-coord <status|acquire|release|note|chat|tell|watch|spawn|personality> [resource] [--reason "…"] [--ttl <sec>] [--note "…"] [--base <branch>] [--task "…"]');
+  console.error('usage: cos-coord <status|acquire|release|note|chat|tell|watch|spawn|rename|personality> [resource] [--reason "…"] [--ttl <sec>] [--note "…"] [--base <branch>] [--task "…"] [--model <model>] [--effort <level>] [--name "…"] [--to "…"]');
   process.exit(0);
 }
 

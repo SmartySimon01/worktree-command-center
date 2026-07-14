@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Enable the journal tile's **Convert to Linear** button — Claude proposes a 1‑or‑more issue split, the user picks via checkboxes, and a second headless Claude creates the checked issues in the `CJBrothers` Linear team, then the tile shows the created links.
+**Goal:** Enable the journal tile's **Convert to Linear** button — Claude proposes a 1‑or‑more issue split, the user picks via checkboxes, and a second headless Claude creates the checked issues in the `<your-team>` Linear team, then the tile shows the created links.
 
-**Architecture:** A `LinearConvertProbe` runs two one-shot headless `claude -p` calls (propose with `--allowedTools Read`; create with `--allowedTools mcp__linear-cjb__save_issue`), each reading input from a temp file in `cwd` (never the command line — Phase 2 lesson). Pure `buildProposePrompt`/`buildCreatePrompt`/`parseIssuesJson` helpers are unit-tested. The `JournalTile` gets a propose→checkbox-preview→create→result flow. Builds on Phase 1+2 already on `main`.
+**Architecture:** A `LinearConvertProbe` runs two one-shot headless `claude -p` calls (propose with `--allowedTools Read`; create with `--allowedTools mcp__linear__save_issue`), each reading input from a temp file in `cwd` (never the command line — Phase 2 lesson). Pure `buildProposePrompt`/`buildCreatePrompt`/`parseIssuesJson` helpers are unit-tested. The `JournalTile` gets a propose→checkbox-preview→create→result flow. Builds on Phase 1+2 already on `main`.
 
 **Tech Stack:** TypeScript, Electron renderer, vitest. Spec: `docs/superpowers/specs/2026-06-26-journal-convert-to-linear-design.md`.
 
@@ -12,8 +12,8 @@
 
 - TS strict; verify each task with `npx tsc --noEmit --skipLibCheck` (repo root).
 - Reuse `stripAnsi` (`usage-parse.ts`) and `SessionBridge` (`session-bridge.ts`). Reuse `setFooterDisabled` + `openExternalUrl` already in `journal-tile.ts`/`links.ts`.
-- Input ALWAYS via a temp file in `cwd`, never the `-p` arg. Create step is restricted to `--allowedTools mcp__linear-cjb__save_issue` — never `--dangerously-skip-permissions`.
-- Linear team: `CJBrothers`, id `0c1d60eb-eb84-4cd2-8a8c-d7b0926b28d5`.
+- Input ALWAYS via a temp file in `cwd`, never the `-p` arg. Create step is restricted to `--allowedTools mcp__linear__save_issue` — never `--dangerously-skip-permissions`.
+- Linear team: `<your-team>`, id `<team-uuid>`.
 - Commit on `main`, each task scoped via `git add <files>`. Working dir `C:/Users/User/Dev/worktree-command-center`; Windows/Git Bash.
 
 ---
@@ -41,11 +41,11 @@ describe('buildProposePrompt', () => {
   });
 });
 describe('buildCreatePrompt', () => {
-  it('references the issues path, the CJBrothers team, and its id', () => {
+  it('references the issues path, the <your-team> team, and its id', () => {
     const p = buildCreatePrompt('/tmp/i.json');
     expect(p).toContain('/tmp/i.json');
-    expect(p).toContain('CJBrothers');
-    expect(p).toContain('0c1d60eb-eb84-4cd2-8a8c-d7b0926b28d5');
+    expect(p).toContain('<your-team>');
+    expect(p).toContain('<team-uuid>');
   });
 });
 describe('parseIssuesJson', () => {
@@ -80,8 +80,8 @@ export interface LinearConvertProbeOpts { sidecarPath: string; cwd: string; }
 export interface ProposedIssue { title: string; description: string; }
 export interface CreatedIssue { title: string; url?: string; ok: boolean; error?: string; }
 
-const CJB_TEAM = 'CJBrothers';
-const CJB_TEAM_ID = '0c1d60eb-eb84-4cd2-8a8c-d7b0926b28d5';
+const TEAM_NAME = '<your-team>';
+const TEAM_ID = '<team-uuid>';
 
 export function buildProposePrompt(notePath: string): string {
   return (
@@ -95,7 +95,7 @@ export function buildProposePrompt(notePath: string): string {
 export function buildCreatePrompt(issuesPath: string): string {
   return (
     `Read the JSON array of issues at ${issuesPath}. For EACH issue, create a Linear issue in the ` +
-    `"${CJB_TEAM}" team (id ${CJB_TEAM_ID}) using the available Linear tool, with its title and ` +
+    `"${TEAM_NAME}" team (id ${TEAM_ID}) using the available Linear tool, with its title and ` +
     'description. Output ONLY a JSON array with one object per issue: {"title": string, "url": ' +
     'string, "ok": true} on success, or {"title": string, "ok": false, "error": string} on ' +
     'failure. No preamble, no explanation, no code fences.'
@@ -148,7 +148,7 @@ export class LinearConvertProbe {
 
   async create(issues: ProposedIssue[]): Promise<CreatedIssue[]> {
     if (!issues.length) return [];
-    const rows = await this.run(JSON.stringify(issues), buildCreatePrompt, 'mcp__linear-cjb__save_issue', 120000);
+    const rows = await this.run(JSON.stringify(issues), buildCreatePrompt, 'mcp__linear__save_issue', 120000);
     return rows
       .filter((r): r is Record<string, unknown> => !!r && typeof (r as Record<string, unknown>).title === 'string')
       .map((r) => ({

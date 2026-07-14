@@ -3,7 +3,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import * as fs from 'fs';
 import * as path from 'path';
-import { SessionBridge } from './session-bridge';
+import { SessionBridge, safeSessionEnv } from './session-bridge';
 import { godSystemPrompt, type GodRepo } from './god';
 import { scrollIntentForKey, type ScrollIntent } from './scroll-keys';
 import { FitThrottle } from './fit-throttle';
@@ -15,6 +15,10 @@ export interface GodConsoleOpts {
 	coordDir: string;
 	sidecarPath: string;
 	godHomeDir: string;   // a neutral cwd outside every repo
+	sessionEnv?: () => Record<string, string>;
+	onFocusChange?: (focused: boolean) => void;
+	instanceName?: string;   // head label + COS_TERMINAL_NAME (default 'Kane')
+	terminalId?: string;     // COS_TERMINAL_ID for cos-coord identity (default '0')
 }
 
 /** GOD: a single privileged claude session in a docked side panel. Real terminal — the
@@ -38,11 +42,43 @@ export class GodConsole {
 
 	render(parent: HTMLElement): void {
 		this.el = parent.createDiv({ cls: 'cos-god-panel' });
+		// Report keyboard-focus changes so the grid can hold auto-centering while the user is
+		// typing to Kane (mirrors terminal-tile's focusin/focusout wiring).
+		this.el.addEventListener('focusin', () => this.opts.onFocusChange?.(true));
+		this.el.addEventListener('focusout', () => this.opts.onFocusChange?.(false));
+		// Left-edge grip: drag to resize the panel width. One shared width for every Kane
+		// panel, persisted across sessions; the body's ResizeObserver refits xterm live.
+		const saved = Number(window.localStorage.getItem('cos-god-width'));
+		if (Number.isFinite(saved) && saved >= 280) this.el.style.flex = `0 0 ${Math.min(Math.round(saved), Math.round(window.innerWidth * 0.7))}px`;
+		const grip = this.el.createDiv({ cls: 'cos-god-resize' });
+		grip.addEventListener('pointerdown', (e) => {
+			e.preventDefault();
+			const startX = e.clientX;
+			const startW = this.el?.getBoundingClientRect().width ?? 0;
+			grip.setPointerCapture(e.pointerId); // pointerup arrives even if released outside the window
+			grip.classList.add('dragging');
+			const move = (ev: PointerEvent): void => {
+				if (!this.el) return; // disposed mid-drag
+				const w = Math.min(Math.max(280, startW + (startX - ev.clientX)), Math.round(window.innerWidth * 0.7));
+				this.el.style.flex = `0 0 ${Math.round(w)}px`;
+			};
+			const up = (ev: PointerEvent): void => {
+				grip.classList.remove('dragging');
+				grip.removeEventListener('pointermove', move);
+				grip.removeEventListener('pointerup', up);
+				grip.removeEventListener('pointercancel', up);
+				try { grip.releasePointerCapture(ev.pointerId); } catch { /* already released */ }
+				if (this.el) window.localStorage.setItem('cos-god-width', String(Math.round(this.el.getBoundingClientRect().width)));
+			};
+			grip.addEventListener('pointermove', move);
+			grip.addEventListener('pointerup', up);
+			grip.addEventListener('pointercancel', up);
+		});
 		const head = this.el.createDiv({ cls: 'cos-god-head' });
-		head.createSpan({ text: '⚒ Able' });
-		const refreshBtn = head.createEl('button', { text: '⟳', cls: 'cos-term-refresh', attr: { title: 'Refresh Able — reload with --continue (keeps the conversation)' } });
+		head.createSpan({ text: `🜲 ${this.opts.instanceName ?? 'Kane'}` });
+		const refreshBtn = head.createEl('button', { text: '⟳', cls: 'cos-term-refresh', attr: { title: 'Refresh Kane — reload with --continue (keeps the conversation)' } });
 		refreshBtn.addEventListener('click', (e) => { e.stopPropagation(); void this.refresh(); });
-		const hide = head.createEl('button', { text: '×', attr: { title: 'Hide Able (session keeps running)' } });
+		const hide = head.createEl('button', { text: '×', attr: { title: 'Hide Kane (session keeps running)' } });
 		hide.addEventListener('click', (e) => { e.stopPropagation(); this.onHide(); });
 
 		this.bodyEl = this.el.createDiv({ cls: 'cos-god-body' });
@@ -106,7 +142,7 @@ export class GodConsole {
 		// xterm's native paste in the capture phase so a right-click doesn't paste twice.
 		this.bodyEl.addEventListener('paste', (e) => { e.preventDefault(); e.stopImmediatePropagation(); }, true);
 		this.fitThrottle = new FitThrottle({
-			// Able lives in a fixed-width dock (never bubbles), so fit it to its actual size —
+			// Kane lives in a fixed-width dock (never bubbles), so fit it to its actual size —
 			// no minimum clamp (clamping would clip his own readable content).
 			propose: () => this.fit?.proposeDimensions() ?? null,
 			apply: (cols, rows) => { this.term?.resize(cols, rows); this.bridge?.resize(cols, rows); },
@@ -120,19 +156,20 @@ export class GodConsole {
 		this.resizeObs.observe(this.bodyEl);
 	}
 
-	/** Build args/env, create Able's session bridge, wire it, and start it. Called from render()
+	/** Build args/env, create Kane's session bridge, wire it, and start it. Called from render()
 	 *  and from refresh(). resume → claude --continue; fallbackFresh → if --continue finds no
-	 *  conversation, relaunch a FRESH session in place (so ⟳ revives a dead Able). */
+	 *  conversation, relaunch a FRESH session in place (so ⟳ revives a dead Kane). */
 	private startSession(resume: boolean, fallbackFresh = false): void {
 		const ctxFile = this.writeSystemPromptFile();
-		this.writeAbleCommands();
+		this.writeKaneCommands();
 		const args: string[] = resume ? ['--continue'] : [];
 		if (ctxFile) args.push('--append-system-prompt-file', ctxFile);
 		const sidecarDir = path.dirname(this.opts.sidecarPath);
 		const env: Record<string, string> = {
+			...safeSessionEnv(this.opts.sessionEnv),
 			COS_COORD_DIR: this.opts.coordDir,
-			COS_TERMINAL_ID: '0',
-			COS_TERMINAL_NAME: 'Able',
+			COS_TERMINAL_ID: this.opts.terminalId ?? '0',
+			COS_TERMINAL_NAME: this.opts.instanceName ?? 'Kane',
 			COS_ROLE: 'god',
 			PATH: sidecarDir + path.delimiter + (process.env.PATH ?? ''),
 		};
@@ -146,12 +183,12 @@ export class GodConsole {
 				this.startSession(false);
 				return;
 			}
-			this.term?.write(`\r\n[Able session ended (code ${code ?? '?'})]\r\n`);
+			this.term?.write(`\r\n[${this.opts.instanceName ?? 'Kane'} session ended (code ${code ?? '?'})]\r\n`);
 		});
 		this.bridge.start();
 	}
 
-	/** Able has no ready-marker, so approximate "busy" from output activity: any output marks
+	/** Kane has no ready-marker, so approximate "busy" from output activity: any output marks
 	 *  busy and (re)arms a short timer that clears it once output goes quiet. */
 	private markBusy(): void {
 		this.busy = true;
@@ -159,18 +196,24 @@ export class GodConsole {
 		this.busyTimer = window.setTimeout(() => { this.busy = false; this.busyTimer = null; }, 1500);
 	}
 
-	/** Refresh Able: kill + relaunch with --continue in place, resuming his conversation.
+	/** Refresh Kane: kill + relaunch with --continue in place, resuming his conversation.
 	 *  Confirms first only if he's mid-output. */
 	async refresh(): Promise<void> {
 		if (this.busy) {
-			const ok = await promptForConfirm('Refresh Able?', 'Able is mid-response. Refreshing interrupts it and reloads with --continue (the conversation is kept).', 'Refresh');
+			const ok = await promptForConfirm('Refresh Kane?', 'Kane is mid-response. Refreshing interrupts it and reloads with --continue (the conversation is kept).', 'Refresh');
 			if (!ok) return;
 		}
+		this.restartInPlace();
+	}
+
+	/** Restart Kane's session in place WITHOUT confirming — the account switch uses this so
+	 *  a live Kane moves to the new session env too (env re-read inside startSession). */
+	restartInPlace(): void {
 		if (this.busyTimer !== null) { window.clearTimeout(this.busyTimer); this.busyTimer = null; }
 		this.busy = false;
 		this.bridge?.kill();
 		this.term?.reset();
-		this.startSession(true, true); // ⟳: try --continue; if no conversation, fall back to a fresh session
+		this.startSession(true, true); // try --continue; if no conversation, fall back to a fresh session
 	}
 
 	/** Show/hide the panel WITHOUT killing the session. Refits on show. */
@@ -183,7 +226,7 @@ export class GodConsole {
 	focus(): void { this.term?.focus(); }
 	blur(): void { this.term?.blur(); }
 
-	/** Last ≤20 non-blank lines of Able's buffer — for the phone floor view. */
+	/** Last ≤20 non-blank lines of Kane's buffer — for the phone floor view. */
 	recentOutput(): string {
 		const t = this.term;
 		if (!t) return '';
@@ -195,7 +238,7 @@ export class GodConsole {
 		return lines.join('\n');
 	}
 
-	/** Inject a line into Able's session (text + a separated Enter so ConPTY can't coalesce
+	/** Inject a line into Kane's session (text + a separated Enter so ConPTY can't coalesce
 	 *  them) — used to ping him when a watch fires. */
 	notify(text: string): void {
 		this.bridge?.write(text);
@@ -256,19 +299,17 @@ export class GodConsole {
 		this.fitThrottle?.schedule();
 	}
 
-	/** Drop a project-level `/personality` slash command + a scoped settings file into Able's
-	 *  home dir. The command makes Able run `cos-coord personality` (the app drains it and flips
+	/** Drop a project-level `/personality` slash command + a scoped settings file into Kane's
+	 *  home dir. The command makes Kane run `cos-coord personality` (the app drains it and flips
 	 *  the mode); the settings pre-allow `cos-coord` so the toggle/tell/watch/spawn don't each
-	 *  pop a permission prompt, and log Able's own background Task/Agent runs to the board (tileId
-	 *  0, matching COS_TERMINAL_ID) so they show up in the Coordination panel like everyone else's.
-	 *  Everything else still prompts (Able stays non-bypass). */
-	private writeAbleCommands(): void {
+	 *  pop a permission prompt. Everything else still prompts (Kane stays non-bypass). */
+	private writeKaneCommands(): void {
 		try {
 			const cmdDir = path.join(this.opts.godHomeDir, '.claude', 'commands');
 			fs.mkdirSync(cmdDir, { recursive: true });
 			fs.writeFileSync(path.join(cmdDir, 'personality.md'), [
 				'---',
-				'description: Toggle Able\'s personality (forge-master persona + periodic floor pulses) on/off',
+				'description: Toggle Kane\'s personality (forge-master persona + periodic floor pulses) on/off',
 				'---',
 				'Run exactly this command and nothing else, then confirm in one short line:',
 				'',
@@ -280,9 +321,11 @@ export class GodConsole {
 				'stops the periodic floor "[pulse]" nudges. Do not do anything else.',
 				'',
 			].join('\n'), 'utf8');
+			const settingsFile = path.join(this.opts.godHomeDir, '.claude', 'settings.json');
+			// Task-matcher hooks so background Task/Agent runs the overseer launches also log to the
+			// board (feeds the Coordination panel's background-tasks list), same as worker terminals.
 			const coordHookAbsPath = path.join(path.dirname(this.opts.sidecarPath), 'coord-hook.cjs');
 			const task = (extra: string) => ({ matcher: 'Task', hooks: [{ type: 'command', command: `node "${coordHookAbsPath}" --task${extra}` }] });
-			const settingsFile = path.join(this.opts.godHomeDir, '.claude', 'settings.json');
 			fs.writeFileSync(settingsFile, JSON.stringify({
 				permissions: { allow: ['Bash(cos-coord:*)'] },
 				hooks: { PreToolUse: [task('')], PostToolUse: [task(' --release')] },
@@ -302,6 +345,8 @@ export class GodConsole {
 
 	/** Full teardown — kills the session. */
 	dispose(): void {
+		// Removing a focused element fires no focusout — clear the grid's focus flag manually.
+		if (this.el?.contains(document.activeElement)) this.opts.onFocusChange?.(false);
 		this.resizeObs?.disconnect(); this.resizeObs = null;
 		this.fitThrottle?.dispose(); this.fitThrottle = null;
 		this.bridge?.kill(); this.bridge = null;

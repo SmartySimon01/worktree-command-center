@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { encodeFrame, decodeFrames } from '../src/terminals/session-bridge';
+import { encodeFrame, decodeFrames, safeSessionEnv } from '../src/terminals/session-bridge';
 
 describe('encodeFrame', () => {
 	it('serializes one newline-terminated JSON line', () => {
@@ -16,5 +16,17 @@ describe('decodeFrames', () => {
 	it('skips malformed lines', () => {
 		const { frames } = decodeFrames('not json\n{"t":"exit","code":0}\n');
 		expect(frames).toEqual([{ t: 'exit', code: 0 }]);
+	});
+});
+
+describe('safeSessionEnv', () => {
+	it('returns {} when no provider is set', () => {
+		expect(safeSessionEnv(undefined)).toEqual({});
+	});
+	it('returns the provider env', () => {
+		expect(safeSessionEnv(() => ({ CLAUDE_CONFIG_DIR: 'X' }))).toEqual({ CLAUDE_CONFIG_DIR: 'X' });
+	});
+	it('returns {} when the provider throws', () => {
+		expect(safeSessionEnv(() => { throw new Error('boom'); })).toEqual({});
 	});
 });

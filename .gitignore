@@ -1,7 +1,9 @@
 node_modules/
 dist/
 release/
+release-private/
 pty-sidecar/contexts/
 *.log
 .DS_Store
 .superpowers/
+/private/

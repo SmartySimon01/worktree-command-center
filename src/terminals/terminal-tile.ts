@@ -3,7 +3,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import * as fs from 'fs';
 import * as path from 'path';
-import { SessionBridge } from './session-bridge';
+import { SessionBridge, safeSessionEnv } from './session-bridge';
 import { removeWorktreeAndBranch, terminalSystemPrompt, type WorktreeInfo } from './worktree-manager';
 import { scrollIntentForKey, type ScrollIntent } from './scroll-keys';
 import { FitThrottle } from './fit-throttle';
@@ -20,6 +20,7 @@ export interface TerminalTileOpts {
 	worktree: WorktreeInfo;
 	sidecarPath: string;
 	coordDir: string;
+	sessionEnv?: () => Record<string, string>;
 	onClosed: (tile: TerminalTile) => void;
 	onHide?: (tile: TerminalTile) => void;
 	onLock?: (tile: TerminalTile) => void;
@@ -30,6 +31,8 @@ export interface TerminalTileOpts {
 	onReady?: (tile: TerminalTile) => void;
 	resume?: boolean;
 	bypassPermissions?: boolean;
+	model?: string;
+	effort?: string;
 	name?: string;
 	onRename?: (tile: TerminalTile, name: string) => void;
 	onRequestRename?: (tile: TerminalTile, currentName: string) => void;
@@ -416,7 +419,7 @@ export class TerminalTile implements StageTile {
 	}
 
 	/** Serializable record for persistence. */
-	sessionRecord(): { worktreePath: string; branch: string; repoName: string; repoPath: string; baseBranch: string; name: string } {
+	sessionRecord(): { worktreePath: string; branch: string; repoName: string; repoPath: string; baseBranch: string; name: string; model?: string; effort?: string } {
 		return {
 			worktreePath: this.opts.worktree.worktreePath,
 			branch: this.opts.worktree.branch,
@@ -424,6 +427,8 @@ export class TerminalTile implements StageTile {
 			repoPath: this.opts.repoPath,
 			baseBranch: this.opts.baseBranch,
 			name: this.displayName,
+			...(this.opts.model ? { model: this.opts.model } : {}),
+			...(this.opts.effort ? { effort: this.opts.effort } : {}),
 		};
 	}
 
@@ -463,10 +468,13 @@ export class TerminalTile implements StageTile {
 		this.ended = false;
 		const args = resume ? ['--continue'] : [];
 		if (this.opts.bypassPermissions) args.push('--dangerously-skip-permissions');
+		if (this.opts.model) args.push('--model', this.opts.model);
+		if (this.opts.effort) args.push('--effort', this.opts.effort);
 		const ctxFile = this.writeContextFile();
 		if (ctxFile) args.push('--append-system-prompt-file', ctxFile);
 		const sidecarDir = path.dirname(this.opts.sidecarPath);
 		const env: Record<string, string> = {
+			...safeSessionEnv(this.opts.sessionEnv),
 			COS_COORD_DIR: this.opts.coordDir,
 			COS_TERMINAL_ID: String(this.opts.tileId),
 			COS_TERMINAL_NAME: this.displayName,
@@ -506,9 +514,16 @@ export class TerminalTile implements StageTile {
 			);
 			if (!ok) return;
 		}
+		this.restartInPlace();
+	}
+
+	/** Restart the session in place WITHOUT confirming — kill + relaunch with --continue
+	 *  (fresh fallback intact). The account switch uses this to move every live terminal to
+	 *  the new session env at once; the env is re-read inside startSession. */
+	restartInPlace(): void {
 		this.bridge?.kill();
 		this.term?.reset();
 		this.idle = false;
-		this.startSession(true, true); // ⟳: try --continue; if no conversation, fall back to a fresh session
+		this.startSession(true, true);
 	}
 }

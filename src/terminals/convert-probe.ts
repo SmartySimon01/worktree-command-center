@@ -1,10 +1,10 @@
-import { SessionBridge } from './session-bridge';
+import { SessionBridge, safeSessionEnv } from './session-bridge';
 import { stripAnsi } from './usage-parse';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { TrackerDestination } from './convert-destinations';
 
-export interface ConvertProbeOpts { sidecarPath: string; cwd: string; }
+export interface ConvertProbeOpts { sidecarPath: string; cwd: string; sessionEnv?: () => Record<string, string>; }
 export interface ProposedIssue { title: string; description: string; }
 export interface CreatedIssue { title: string; url?: string; ok: boolean; error?: string; }
 
@@ -53,7 +53,7 @@ export class ConvertProbe {
 			const cleanup = (): void => { try { fs.unlinkSync(tmp); } catch { /* gone */ } };
 			const bridge = new SessionBridge(
 				this.opts.sidecarPath, this.opts.cwd, 'claude',
-				['-p', prompt(tmp), '--output-format', 'text', '--allowedTools', tool], {},
+				['-p', prompt(tmp), '--output-format', 'text', '--allowedTools', tool], safeSessionEnv(this.opts.sessionEnv),
 			);
 			let buf = '';
 			let done = false;

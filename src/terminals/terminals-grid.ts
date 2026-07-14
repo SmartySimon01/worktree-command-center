@@ -12,13 +12,13 @@ import { openExternalUrl, revealInFileManager } from './links';
 import { EDITORS, FILE_BROWSER, CUSTOM_EDITOR, resolveEditorCommand, type EditorDef } from './editor-launch';
 import { ChatRoom } from './chat-room';
 import { ChatTile } from './chat-tile';
-import { settledLayout, centeredLayout, keyForIndex, keyToIndex, physicalKeyLabel } from './bubble-layout';
-import { emptyState, applyKeystroke, onReady as rqReady, onSubmit as rqSubmit, onClose as rqClose, onClick as rqClick, cycleNext as rqCycleNext, cyclePrev as rqCyclePrev } from './ready-queue';
+import { settledLayout, centeredLayout, keyForIndex, keyToIndex, physicalKeyLabel, nextSpotlight } from './bubble-layout';
+import { emptyState, applyKeystroke, onReady as rqReady, onSubmit as rqSubmit, onClose as rqClose, onClick as rqClick } from './ready-queue';
 import { decideCenter, type SpotlightState } from './focus-decider';
 import { partitionByHidden } from './session-partition';
 import { GodConsole } from './god-console';
-import { slug as godSlug, formatFloorSnapshot, formatFloorIndex, parseOutboxMessage, resolveTellTarget, type OutboxMessage } from './god';
-import { looksLikeMenu, looksErrored } from './prompt-detect';
+import { slug as godSlug, formatFloorSnapshot, formatFloorIndex, parseOutboxMessage, resolveTellTarget, remapWatchers, EFFORT_LEVELS, type OutboxMessage } from './god';
+import { looksLikeMenu, looksErrored, looksBusy } from './prompt-detect';
 import { looksLikePrompt } from './chat-room';
 import { classifyAttention, type AttentionItem } from './attention';
 import { JournalTile } from './journal-tile';
@@ -40,30 +40,51 @@ export interface GridDeps {
 	sessionsFile: string;
 	group: string;
 	bypassPermissions: boolean;
+	sessionEnv?: () => Record<string, string>;
 	toast: (msg: string) => void;
 	promptForTopic: (title: string, placeholder: string, initial?: string, okLabel?: string) => Promise<string | null>;
 	openSettings: () => void;
 }
-interface SessionRecord { worktreePath: string; branch: string; repoName: string; repoPath: string; baseBranch: string; name?: string; hidden?: boolean; kind?: 'terminal' | 'journal'; journalSlug?: string; }
+interface SessionRecord { worktreePath: string; branch: string; repoName: string; repoPath: string; baseBranch: string; name?: string; hidden?: boolean; kind?: 'terminal' | 'journal'; journalSlug?: string; model?: string; effort?: string; }
 
-// --- Able personality mode (toggled by his /personality command) ---
-const ABLE_PERSONA_ON =
-	'[personality: ON] Speak as Able the forge-master from now on — terse, gruff, dry, in command ' +
+// Model options for the spawn toolbar dropdown. Empty value = inherit the claude CLI default.
+const SPAWN_MODELS: { label: string; value: string }[] = [
+	{ label: 'Model: Default', value: '' },
+	{ label: 'Opus 4.8', value: 'claude-opus-4-8' },
+	{ label: 'Sonnet 5', value: 'claude-sonnet-5' },
+	{ label: 'Fable 5', value: 'claude-fable-5' },
+	{ label: 'Haiku 4.5', value: 'claude-haiku-4-5-20251001' },
+];
+
+// Effort options for the spawn toolbar dropdown. Empty value = inherit the claude CLI default.
+const SPAWN_EFFORTS: { label: string; value: string }[] = [
+	{ label: 'Effort: Default', value: '' },
+	...EFFORT_LEVELS.map((l) => ({ label: l === 'xhigh' ? 'XHigh' : l[0]!.toUpperCase() + l.slice(1), value: l })),
+];
+
+// How long a manual tile choice (click / Alt+F-key / resurfacing) suppresses auto-centering.
+const MANUAL_HOLD_MS = 30_000;
+
+// --- Kane personality mode (toggled by his /personality command) ---
+const KANE_PERSONA_ON =
+	'[personality: ON] Speak as Kane the forge-master from now on — terse, gruff, dry, in command ' +
 	'of the floor; the worker terminals are your smiths and their branches are iron on the anvil. ' +
 	'Drop the odd forge/river turn of phrase, never flowery. Keep doing your job exactly as before ' +
 	'(same tools, same restraint — you still do not run the floor unprompted), just in that voice. ' +
 	'Periodically you will get a line starting "[pulse]" — answer each with ONE punchy sentence on ' +
 	'the floor\'s state right now. Confirm now with a single line, in character.';
-const ABLE_PERSONA_OFF =
+const KANE_PERSONA_OFF =
 	'[personality: OFF] Drop the forge-master voice — back to your plain, neutral overseer tone. ' +
 	'The "[pulse]" nudges have stopped; ignore any you still see. Acknowledge in one short line.';
-const ABLE_PULSE = '[pulse] One line, in character: what\'s the floor doing right now?';
+const KANE_PULSE = '[pulse] One line, in character: what\'s the floor doing right now?';
 
 /** Controls bar + a bubbling stage of embedded claude terminals, scoped to one repo group. */
 export class TerminalsGrid {
 	private repos: RepoConfig[] = [];
 	private repoSel: HTMLSelectElement | null = null;
 	private branchSel: HTMLSelectElement | null = null;
+	private modelSel: HTMLSelectElement | null = null;
+	private effortSel: HTMLSelectElement | null = null;
 	private stageEl: HTMLElement | null = null;
 	private maxBtn: HTMLElement | null = null;
 	private controlsEl: HTMLElement | null = null;
@@ -91,7 +112,11 @@ export class TerminalsGrid {
 	private godBtn: HTMLButtonElement | null = null;
 	private godConsole: GodConsole | null = null;
 	private godVisible = false;
-	private ablePersonality = false;          // off = Able behaves exactly as today (no persona, no pulses)
+	private focusedKane: GodConsole | null = null;   // which Kane console (primary or duplicate) holds keyboard focus
+	private extraKanes: GodConsole[] = [];
+	private kaneSeq = 1; // monotonic: duplicates are Kane 2, 3, … — numbers never reused in-session
+	private holdUntil = 0;               // epoch ms: autoCenter is suppressed until then
+	private kanePersonality = false;          // off = Kane behaves exactly as today (no persona, no pulses)
 	private pulseTimer: number | null = null;
 	private readonly pulseMs = 12 * 60 * 1000; // proactive floor-pulse cadence while personality is on
 	private watchers: Array<{ target: string; note: string }> = [];
@@ -99,6 +124,7 @@ export class TerminalsGrid {
 	private idleTiles = new Set<number>();
 	private stageWrapEl: HTMLElement | null = null;
 	private floorTimer: number | null = null;
+	private spotlightTimer: number | null = null;
 	private godOutboxWatcher: import('fs').FSWatcher | null = null;
 	private parentEl: HTMLElement | null = null;
 	private readonly sidecarPath: string;
@@ -124,8 +150,8 @@ export class TerminalsGrid {
 		this.coordDir = deps.coordDir;
 		this.coordHookPath = deps.coordHookPath;
 		this.journalStore = new JournalStore(path.join(this.coordDir, 'journals'));
-		this.formatProbe = new FormatProbe({ sidecarPath: this.sidecarPath, cwd: this.coordDir });
-		this.convertProbe = new ConvertProbe({ sidecarPath: this.sidecarPath, cwd: this.coordDir });
+		this.formatProbe = new FormatProbe({ sidecarPath: this.sidecarPath, cwd: this.coordDir, sessionEnv: deps.sessionEnv });
+		this.convertProbe = new ConvertProbe({ sidecarPath: this.sidecarPath, cwd: this.coordDir, sessionEnv: deps.sessionEnv });
 	}
 
 	/** Journal destinations configured in Settings (app-wide, not scoped to this workspace/group). */
@@ -163,6 +189,14 @@ export class TerminalsGrid {
 
 		this.branchSel = controls.createEl('select');
 
+		this.modelSel = controls.createEl('select');
+		this.modelSel.title = 'Model for new terminals';
+		for (const m of SPAWN_MODELS) this.modelSel.createEl('option', { text: m.label, value: m.value });
+
+		this.effortSel = controls.createEl('select');
+		this.effortSel.title = 'Effort for new terminals';
+		for (const m of SPAWN_EFFORTS) this.effortSel.createEl('option', { text: m.label, value: m.value });
+
 		const newBranchBtn = controls.createEl('button', { text: '+ New branch' });
 		newBranchBtn.addEventListener('click', () => {
 			void this.deps.promptForTopic('New branch', 'branch name (based on the selected branch)', '', 'Create').then((name) => {
@@ -188,9 +222,13 @@ export class TerminalsGrid {
 		// this.selectBtn = controls.createEl('button', { text: '⊕ Select' });
 		// this.selectBtn.addEventListener('click', () => this.setSelecting(!this.selecting));
 
-		this.godBtn = controls.createEl('button', { text: '⚒ Able', cls: 'cos-god-btn' });
-		this.godBtn.setAttribute('title', 'Open the Able overseer console — sees the whole floor, acts on request');
+		this.godBtn = controls.createEl('button', { text: '🜲 Kane', cls: 'cos-god-btn' });
+		this.godBtn.setAttribute('title', 'Open the Kane overseer console — sees the whole floor, acts on request (Alt+K)');
 		this.godBtn.addEventListener('click', () => this.toggleGod());
+
+		const kaneDupBtn = controls.createEl('button', { text: '🜲+', cls: 'cos-god-btn' });
+		kaneDupBtn.setAttribute('title', 'Add another Kane console — a separate session in its own panel (close it with its ×)');
+		kaneDupBtn.addEventListener('click', () => this.addKane());
 
 		const viewCode = controls.createEl('button', { text: '🧩 View Code' });
 		viewCode.addEventListener('click', () => void this.openInEditor());
@@ -257,6 +295,7 @@ export class TerminalsGrid {
 	unmount(): void {
 		if (this.keydown) document.removeEventListener('keydown', this.keydown, true);
 		if (this.keyup) document.removeEventListener('keyup', this.keyup, true);
+		if (this.spotlightTimer !== null) { window.clearInterval(this.spotlightTimer); this.spotlightTimer = null; }
 		if (this.onWinFocus) window.removeEventListener('focus', this.onWinFocus);
 		if (this.onWinBlur) window.removeEventListener('blur', this.onWinBlur);
 		window.removeEventListener('resize', this.onResize);
@@ -267,7 +306,10 @@ export class TerminalsGrid {
 		this.chatTile?.unmount();
 		this.chatTile = null;
 		this.chatRoom = null;
-		this.stopFloorFeed();
+		// Deliberately NOT stopping the GOD floor feed here. unmount() only DETACHES the view
+		// (tab/workspace switch) — worker sessions keep running — so Kane must keep seeing the
+		// floor and receiving outbox commands across switches. The feed is tied to the GOD
+		// console's lifetime and torn down only in dispose().
 		this.board?.unmount();
 		// Drop the controls bar too, so re-mounting this grid (workspace switch) doesn't stack a
 		// second one. The stage wrap is detached-but-retained (tiles + sidecars stay alive).
@@ -288,6 +330,21 @@ export class TerminalsGrid {
 		this.layoutRaf = window.requestAnimationFrame(() => { this.layoutRaf = null; this.applyLayout(); });
 	}
 
+	/** Alt+←/→: step the spotlight across every visible tile AND an equal-grid stop (no
+	 *  spotlight). Independent of the ready stack, so it reaches the equal grid even when every
+	 *  terminal is thinking (the stack is empty then, which is why the old cycle couldn't).
+	 *  Landing on a tile pins it so the auto-decider won't immediately yank it back. */
+	private cycleSpotlight(dir: 1 | -1): void {
+		this.holdUntil = 0; // Alt+←/→ = back in the flow; cycling never pins for long
+		const chatId = this.chatTile?.tileId;
+		const ids = [...this.tiles.map((t) => t.tileId), ...(chatId !== undefined ? [chatId] : [])];
+		if (ids.length === 0) return;
+		const want = nextSpotlight(ids, this.centeredId, dir);
+		if (want === null) { this.centeredId = null; this.applyLayout(); return; } // equal grid
+		const r = rqClick(this.q, want); this.q = r.state; // pin so autoCenter keeps it
+		this.doCenter(want);
+	}
+
 	private installKeyboard(): void {
 		this.keydown = (e: KeyboardEvent) => {
 			if (e.key === 'Alt') { this.stageEl?.toggleClass('alt-on', true); this.refreshBadges(); return; }
@@ -295,21 +352,29 @@ export class TerminalsGrid {
 			// terminal so Claude gets it (double-Esc clears the message). Use the Minimize /
 			// Restore buttons to leave fullscreen.
 			if (!e.altKey) return;
-			if (e.key === 'ArrowRight') { e.preventDefault(); const r = rqCycleNext(this.q); this.q = r.state; if (r.center !== null) this.doCenter(r.center); return; }
-			if (e.key === 'ArrowLeft') { e.preventDefault(); const r = rqCyclePrev(this.q); this.q = r.state; if (r.center !== null) this.doCenter(r.center); return; }
+			if (e.key === 'ArrowRight') { e.preventDefault(); this.cycleSpotlight(1); return; }
+			if (e.key === 'ArrowLeft') { e.preventDefault(); this.cycleSpotlight(-1); return; }
 			// .code (physical key), not .key: Option composes most letters into accented/special
-			// characters on macOS (Option+L -> "\u00ac", not "l"/"L"), so .key alone breaks these
-			// on Mac. See physicalKeyLabel's doc comment.
+			// characters on macOS (Option+L composes instead of 'l'/'L'), so .key alone breaks these on
+			// Mac. See physicalKeyLabel's doc comment. Same reason Alt+K uses e.code below.
 			if (e.code === 'KeyL') { e.preventDefault(); if (this.centeredId !== null) this.toggleLockById(this.centeredId); return; }
+			// Alt+K opens/focuses Kane. Kane wins this key — the letter-badge jumps only reach 'K'
+			// with 23+ visible tiles, which never happens in practice.
+			if (e.code === 'KeyK') { e.preventDefault(); this.openKane(); return; }
 			const idx = keyToIndex(physicalKeyLabel(e));
 			if (idx !== null && this.tiles[idx]) { e.preventDefault(); this.handleClick(this.tiles[idx]!.tileId); }
 		};
 		this.keyup = (e: KeyboardEvent) => { if (e.key === 'Alt') { this.stageEl?.toggleClass('alt-on', false); this.tiles.forEach((t) => t.setBadge(null)); } };
 		document.addEventListener('keydown', this.keydown, true);
 		document.addEventListener('keyup', this.keyup, true);
+		// Re-derive the spotlight from live output ~1x/s so the layout stays honest when a tile
+		// resumes work by a route that isn't an in-app Enter (a cos-coord tell, an auto-sent task,
+		// bypass-permission auto-continue) — otherwise its idle flag drifts stale and the grid
+		// never drops to equal size even though every tile is thinking.
+		if (this.spotlightTimer === null) this.spotlightTimer = window.setInterval(() => this.autoCenter(), 1000);
 		// When the OS window regains focus (alt-tab back in), put the cursor back into the
 		// centered terminal — Electron otherwise restores it to whatever tile had it before.
-		this.onWinFocus = () => this.focusCentered();
+		this.onWinFocus = () => { if (this.focusedKane) this.focusedKane.focus(); else this.focusCentered(); };
 		window.addEventListener('focus', this.onWinFocus);
 		// Leaving Obsidian entirely (alt-tab to another app) also releases the typing-hold,
 		// so terminals keep bubbling while you're working elsewhere.
@@ -361,13 +426,16 @@ export class TerminalsGrid {
 
 	/** Shared spawn core: create a worktree + tile, render, persist, layout. Optionally queue an
 	 *  initial task to send once the new session is first ready. Returns the tile (or null). */
-	private async spawnWorktree(repo: RepoConfig, base: string, opts: { task?: string }): Promise<TerminalTile | null> {
+	private async spawnWorktree(repo: RepoConfig, base: string, opts: { task?: string; model?: string; effort?: string; name?: string }): Promise<TerminalTile | null> {
 		try {
 			const branches = await listBranches(repo.path);
 			const branch = this.pendingNewBranch ?? nextWorktreeBranch(branches, base);
 			this.pendingNewBranch = null;
 			const worktree = await createWorktree(repo.path, repo.name, base, branch, this.notifyScriptPath, this.coordHookPath);
-			const tile = this.makeTile(worktree, repo.name, repo.path, base, false);
+			// Explicit opts win; otherwise inherit the toolbar dropdowns ('' = CLI default = no flag).
+			const model = opts.model ?? (this.modelSel?.value || undefined);
+			const effort = opts.effort ?? (this.effortSel?.value || undefined);
+			const tile = this.makeTile(worktree, repo.name, repo.path, base, false, opts.name, model, effort);
 			if (opts.task) this.pendingTask.set(tile.tileId, opts.task);
 			if (this.stageEl) tile.render(this.stageEl);
 			this.tiles.push(tile);
@@ -380,12 +448,16 @@ export class TerminalsGrid {
 		}
 	}
 
-	/** Able asked to spawn a terminal: resolve the repo by name, default the base branch, start
-	 *  it on the given task. */
-	private async spawnFromAble(repoName: string, base: string | null, task: string): Promise<void> {
+	/** Kane asked to spawn a terminal: resolve the repo by name, validate the effort, default the
+	 *  base branch, start it on the given task. Invalid effort → error note, no spawn. */
+	private async spawnFromKane(repoName: string, base: string | null, task: string, model: string | null = null, effort: string | null = null, name: string | null = null): Promise<void> {
 		const known = this.repos.some((r) => r.name === repoName || r.name.toLowerCase() === repoName.toLowerCase());
 		if (!known) { this.writeGodInbox(`cannot spawn — unknown repo "${repoName}". Known: ${this.repos.map((r) => r.name).join(', ') || '(none)'}`); return; }
-		await this.spawnFromName(repoName, base, task);
+		if (effort !== null && !(EFFORT_LEVELS as readonly string[]).includes(effort)) {
+			this.writeGodInbox(`cannot spawn — invalid --effort "${effort}". Valid: ${EFFORT_LEVELS.join(', ')}`);
+			return;
+		}
+		await this.spawnFromName(repoName, base, task, model ?? undefined, effort ?? undefined, name ?? undefined);
 	}
 
 	/** Spawn a new journal tile, center it, and persist. */
@@ -547,6 +619,7 @@ export class TerminalsGrid {
 		this.q = r.state;
 		this.q.composingLen = 0;
 		this.doCenter(r.center);
+		this.holdUntil = Date.now() + MANUAL_HOLD_MS; // an explicit choice — hold the spotlight here
 	}
 
 	private updateChatBtn(): void {
@@ -631,7 +704,7 @@ export class TerminalsGrid {
 		return this.idleTiles.has(t.tileId) ? 'idle' : 'running';
 	}
 
-	/** Floor snapshot for the phone view: every session (+ Able) with state + recent output. */
+	/** Floor snapshot for the phone view: every session (+ Kane) with state + recent output. */
 	floorState(): RemoteTerminal[] {
 		const out: RemoteTerminal[] = (this.allSessions().filter((t) => !t.isJournal) as TerminalTile[]).map((t) => ({
 			id: t.tileId, name: t.name, repo: this.repoNameFor(t), branch: t.branch,
@@ -640,7 +713,7 @@ export class TerminalsGrid {
 		if (this.godConsole) {
 			const ko = this.godConsole.recentOutput();
 			out.unshift({
-				id: -1, name: 'Able', repo: '—', branch: '—',
+				id: -1, name: 'Kane', repo: '—', branch: '—',
 				state: looksLikePrompt(ko) ? 'prompt' : looksLikeMenu(ko) ? 'menu' : 'running',
 				output: ko.split('\n').slice(-12).join('\n'), remoteOn: false,
 			});
@@ -656,23 +729,26 @@ export class TerminalsGrid {
 		if (t && !t.isJournal) (t as TerminalTile).toggleRemoteControl();
 	}
 
-	/** Spawn a worktree terminal for a repo by name, on a base, with a kickoff task. */
-	async spawnFromName(repoName: string, base: string | null, task: string): Promise<TerminalTile | null> {
+	/** Spawn a worktree terminal for a repo by name, on a base, with a kickoff task. Model/effort
+	 *  override the toolbar dropdowns when given (spawnWorktree applies the fallback); name
+	 *  overrides the default branch-derived terminal name. */
+	async spawnFromName(repoName: string, base: string | null, task: string, model?: string, effort?: string, name?: string): Promise<TerminalTile | null> {
 		const repo = this.repos.find((r) => r.name === repoName)
 			?? this.repos.find((r) => r.name.toLowerCase() === repoName.toLowerCase());
 		if (!repo) return null;
 		const baseBranch = base ?? (defaultBranch(await listBranches(repo.path)) ?? 'main');
-		return this.spawnWorktree(repo, baseBranch, { task });
+		return this.spawnWorktree(repo, baseBranch, { task, model, effort, name });
 	}
 
 	/** Toggle the GOD console: spawn on first open, then just show/hide (session persists). */
 	private toggleGod(): void {
 		if (!this.godConsole) {
 			const godHomeDir = path.join(this.coordDir, '..', '.god', this.deps.group);
-			this.godConsole = new GodConsole(
-				{ repos: this.repos.map((r) => ({ name: r.name, path: r.path })), coordDir: this.coordDir, sidecarPath: this.sidecarPath, godHomeDir },
+			const kane: GodConsole = new GodConsole(
+				{ repos: this.repos.map((r) => ({ name: r.name, path: r.path })), coordDir: this.coordDir, sidecarPath: this.sidecarPath, godHomeDir, sessionEnv: this.deps.sessionEnv, onFocusChange: (f) => { this.focusedKane = f ? kane : (this.focusedKane === kane ? null : this.focusedKane); } },
 				() => this.hideGod(),
 			);
+			this.godConsole = kane;
 			if (this.stageWrapEl) this.godConsole.render(this.stageWrapEl);
 			this.godVisible = true;
 			this.startFloorFeed();
@@ -685,6 +761,59 @@ export class TerminalsGrid {
 		else this.showGod();
 	}
 
+	/** Alt+K: open Kane if needed and put the cursor in his terminal. Never closes him. */
+	private openKane(): void {
+		if (!this.godConsole) { this.toggleGod(); return; } // first open creates + focuses
+		if (!this.godVisible) this.showGod();               // setVisible(true) refits + refocuses
+		this.godConsole.focus();
+	}
+
+	/** Dock an ADDITIONAL Kane console — its own session + home dir. Duplicates are cheap:
+	 *  the × disposes them entirely and they are not persisted across app restarts. */
+	private addKane(): void {
+		const n = ++this.kaneSeq;
+		const godHomeDir = path.join(this.coordDir, '..', '.god', `${this.deps.group}-${n}`);
+		const kane = new GodConsole(
+			{
+				repos: this.repos.map((r) => ({ name: r.name, path: r.path })),
+				coordDir: this.coordDir,
+				sidecarPath: this.sidecarPath,
+				godHomeDir,
+				sessionEnv: this.deps.sessionEnv,
+				onFocusChange: (f) => { this.focusedKane = f ? kane : (this.focusedKane === kane ? null : this.focusedKane); },
+				instanceName: `Kane ${n}`,
+				terminalId: String(-n),
+			},
+			() => {
+				kane.dispose();
+				this.extraKanes = this.extraKanes.filter((k) => k !== kane);
+				this.applyLayout();
+			},
+		);
+		if (this.stageWrapEl) kane.render(this.stageWrapEl);
+		this.extraKanes.push(kane);
+		this.startFloorFeed();
+		this.applyLayout();
+		kane.focus();
+	}
+
+	/** Ping the primary Kane and every duplicate (they share the god role — any of them
+	 *  may have registered the watch or flipped the personality). */
+	private notifyKanes(text: string): void {
+		this.godConsole?.notify(text);
+		for (const k of this.extraKanes) k.notify(text);
+	}
+
+	/** Restart every live claude session in this workspace in place (--continue, fresh
+	 *  fallback) — visible + hidden terminals and every Kane console; journals have no
+	 *  session. The account switch uses this so ACTIVE terminals move to the new session
+	 *  env, not just future spawns. */
+	restartSessions(): void {
+		for (const t of [...this.tiles, ...this.hidden]) if (!t.isJournal) (t as TerminalTile).restartInPlace();
+		this.godConsole?.restartInPlace();
+		for (const k of this.extraKanes) k.restartInPlace();
+	}
+
 	private showGod(): void {
 		this.godVisible = true;
 		this.godConsole?.setVisible(true);
@@ -693,8 +822,8 @@ export class TerminalsGrid {
 		this.applyLayout();
 	}
 
-	/** Ensure Able's panel is open + focused — used by the Coordination panel's background-tasks
-	 *  list to jump to Able's own runs (tileId 0, which isn't a real tile in `this.tiles`). */
+	/** Ensure Kane's panel is open + focused — used by the Coordination panel's background-tasks
+	 *  list to jump to Kane's own runs (tileId 0, which isn't a real tile in `this.tiles`). */
 	private focusGod(): void {
 		if (!this.godConsole || !this.godVisible) this.toggleGod();
 		this.godConsole?.focus();
@@ -703,7 +832,9 @@ export class TerminalsGrid {
 	private hideGod(): void {
 		this.godVisible = false;
 		this.godConsole?.setVisible(false);
-		this.stopFloorFeed();
+		// Deliberately NOT stopping the feed. Hiding the panel must not blind/mute Kane — his
+		// session stays alive while hidden, so snapshots + outbox draining keep running. The feed
+		// is started on GOD-console create/show and stopped only in dispose().
 		this.godBtn?.toggleClass('cos-god-on', false);
 		this.applyLayout();
 	}
@@ -781,7 +912,7 @@ export class TerminalsGrid {
 		}
 	}
 
-	/** Act on one parsed Able command (tell a worker / register a watch / spawn a terminal). */
+	/** Act on one parsed Kane command (tell a worker / register a watch / spawn a terminal). */
 	private dispatchOutbox(msg: OutboxMessage, liveNames: string[]): void {
 		if (msg.kind === 'tell') {
 			const name = resolveTellTarget(msg.target, liveNames);
@@ -794,31 +925,41 @@ export class TerminalsGrid {
 			else this.writeGodInbox(`cannot watch "${msg.target}" — not a live terminal. Live: ${liveNames.join(', ') || '(none)'}`);
 		} else if (msg.kind === 'personality') {
 			this.togglePersonality();
+		} else if (msg.kind === 'rename') {
+			const name = resolveTellTarget(msg.target, liveNames);
+			const tile = name ? this.allSessions().find((t) => t.name === name) : undefined;
+			if (tile && !tile.isJournal) {
+				(tile as TerminalTile).setName(msg.name);
+				// Watchers match on terminal name — retarget them so a rename can't strand a watch.
+				this.watchers = remapWatchers(this.watchers, name!, msg.name);
+			} else {
+				this.writeGodInbox(`cannot rename "${msg.target}" — not a live terminal. Live: ${liveNames.join(', ') || '(none)'}`);
+			}
 		} else {
-			void this.spawnFromAble(msg.repo, msg.base, msg.task);
+			void this.spawnFromKane(msg.repo, msg.base, msg.task, msg.model, msg.effort, msg.name);
 		}
 	}
 
-	/** Flip Able's personality mode (triggered by his `/personality` command). On = inject the
+	/** Flip Kane's personality mode (triggered by his `/personality` command). On = inject the
 	 *  forge-master persona + start periodic floor pulses; off = revert to the plain overseer
 	 *  voice + stop pulses. State is app-side so the pulse cadence is gated cleanly. */
 	private togglePersonality(): void {
-		this.ablePersonality = !this.ablePersonality;
-		if (this.ablePersonality) {
-			this.godConsole?.notify(ABLE_PERSONA_ON);
+		this.kanePersonality = !this.kanePersonality;
+		if (this.kanePersonality) {
+			this.notifyKanes(KANE_PERSONA_ON);
 			this.startPulse();
 		} else {
-			this.godConsole?.notify(ABLE_PERSONA_OFF);
+			this.notifyKanes(KANE_PERSONA_OFF);
 			this.stopPulse();
 		}
 	}
 
-	/** Begin nudging Able for a one-line floor pulse on a fixed cadence (only while he's visible —
+	/** Begin nudging Kane for a one-line floor pulse on a fixed cadence (only while he's visible —
 	 *  no point pulsing a hidden panel). */
 	private startPulse(): void {
 		if (this.pulseTimer !== null) return;
 		this.pulseTimer = window.setInterval(() => {
-			if (this.ablePersonality && this.godVisible) this.godConsole?.notify(ABLE_PULSE);
+			if (this.kanePersonality && this.godVisible) this.notifyKanes(KANE_PULSE);
 		}, this.pulseMs);
 	}
 
@@ -933,7 +1074,10 @@ export class TerminalsGrid {
 		const o = t.recentOutput();
 		if (looksLikePrompt(o)) return 'prompt';
 		if (looksLikeMenu(o)) return 'menu';
-		const idle = this.idleTiles.has(t.tileId);
+		// A tile that's actively working ("esc to interrupt" showing) is thinking, even if its
+		// idle flag drifted stale — a cos-coord tell / auto-continue starts a turn without the
+		// in-app Enter that would otherwise mark it busy.
+		const idle = this.idleTiles.has(t.tileId) && !looksBusy(o);
 		if (idle && looksErrored(o)) return 'errored';
 		return idle ? 'idle' : 'thinking';
 	}
@@ -943,11 +1087,12 @@ export class TerminalsGrid {
 	 *  tile: a tile that needs you wins, and when everyone is thinking the grid drops to equal
 	 *  size (no spotlight). Manual clicks/cycles still set the center directly. */
 	private autoCenter(): void {
+		if (Date.now() < this.holdUntil) return; // manual-switch hold — the user chose a tile, let it be
 		const want = decideCenter({
 			tiles: this.tiles.map((t) => ({ id: t.tileId, state: this.spotlightState(t) })),
 			centeredId: this.centeredId,
 			readyOrder: this.q.stack,
-			userTyping: this.q.composingLen > 0,
+			userTyping: this.q.composingLen > 0 || this.focusedKane !== null,
 			globalLock: this.locked,
 			lockedTileId: this.lockedTileId,
 		});
@@ -963,10 +1108,10 @@ export class TerminalsGrid {
 			if (!looksLikePrompt(out) && !looksLikeMenu(out)) {
 				const fired = this.watchers.filter((w) => w.target === t.name);
 				this.watchers = this.watchers.filter((w) => w.target !== t.name);
-				for (const w of fired) this.godConsole?.notify(`[watch] terminal "${t.name}" finished — you asked: ${w.note}`);
+				for (const w of fired) this.notifyKanes(`[watch] terminal "${t.name}" finished — you asked: ${w.note}`);
 			}
 		}
-		// Deliver an Able-spawned terminal's initial task once it's first ready.
+		// Deliver an Kane-spawned terminal's initial task once it's first ready.
 		const task = this.pendingTask.get(t.tileId);
 		if (task !== undefined) { this.pendingTask.delete(t.tileId); t.sendLine(task); }
 
@@ -987,6 +1132,7 @@ export class TerminalsGrid {
 		// submitting a prompt — don't bubble focus away, so a multi-select can be finished in one
 		// go. (The Lock button does this globally; this does it automatically for menus.)
 		if (looksLikeMenu(t.recentOutput())) return;
+		this.holdUntil = 0; // prompt submitted — manual engagement over, the flow resumes
 		this.q = rqSubmit(this.q, t.tileId).state; // finished with it → off the ready stack
 		// Re-derive: center the next tile that needs you, or drop to the equal grid if everyone
 		// is now thinking (nobody is waiting on you).
@@ -1023,6 +1169,7 @@ export class TerminalsGrid {
 		this.centeredId = tile.tileId;
 		this.applyLayout();
 		this.focusCentered();
+		this.holdUntil = Date.now() + MANUAL_HOLD_MS; // resurfacing is an explicit choice too
 		void this.persist();
 		this.board?.refresh();
 	}
@@ -1048,14 +1195,17 @@ export class TerminalsGrid {
 	}
 
 	/** Build a tile with all the grid callbacks wired. `resume` → claude --continue. */
-	private makeTile(worktree: WorktreeInfo, repoName: string, repoPath: string, baseBranch: string, resume: boolean, name?: string): TerminalTile {
+	private makeTile(worktree: WorktreeInfo, repoName: string, repoPath: string, baseBranch: string, resume: boolean, name?: string, model?: string, effort?: string): TerminalTile {
 		return new TerminalTile({
 			tileId: this.nextTileId++,
 			repoName, repoPath, baseBranch, worktree,
 			sidecarPath: this.sidecarPath,
 			coordDir: this.coordDir,
+			sessionEnv: this.deps.sessionEnv,
 			resume,
 			bypassPermissions: this.deps.bypassPermissions,
+			model,
+			effort,
 			name,
 			onRename: () => { void this.persist(); },
 			onRequestRename: (t, cur) => {
@@ -1125,7 +1275,7 @@ export class TerminalsGrid {
 			let exists = false;
 			try { await fs.access(rec.worktreePath); exists = true; } catch { exists = false; }
 			if (!exists) continue;
-			const tile = this.makeTile({ worktreePath: rec.worktreePath, branch: rec.branch }, rec.repoName, rec.repoPath, rec.baseBranch, true, rec.name);
+			const tile = this.makeTile({ worktreePath: rec.worktreePath, branch: rec.branch }, rec.repoName, rec.repoPath, rec.baseBranch, true, rec.name, rec.model, rec.effort);
 			try { await writeReadyHook(rec.worktreePath, this.notifyScriptPath, this.coordHookPath); } catch { /* best effort */ }
 			if (this.stageEl) tile.render(this.stageEl);
 			if (rec.hidden) { tile.setHidden(true); this.hidden.push(tile); }
@@ -1141,7 +1291,10 @@ export class TerminalsGrid {
 		this.stageResizeObs?.disconnect(); this.stageResizeObs = null;
 		this.board = null;
 		this.stopPulse();
+		this.stopFloorFeed(); // feed now persists across unmount()/hideGod(), so stop it on real teardown
 		this.godConsole?.dispose(); this.godConsole = null;
+		for (const k of this.extraKanes) k.dispose();
+		this.extraKanes = [];
 		for (const t of this.tiles) t.kill();
 		for (const t of this.hidden) t.kill();
 		this.tiles = [];
