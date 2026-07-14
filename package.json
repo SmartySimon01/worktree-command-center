@@ -57,7 +57,8 @@
       },
       {
         "from": "node_modules/node-pty",
-        "to": "pty-sidecar/node_modules/node-pty"
+        "to": "pty-sidecar/node_modules/node-pty",
+        "filter": ["package.json", "lib/**/*", "prebuilds/**/*"]
       }
     ]
   }
