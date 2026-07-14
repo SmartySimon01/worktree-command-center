@@ -209,6 +209,19 @@ html, body {
 .wcc-settings-add { display: block; width: 100%; background: var(--background-secondary-alt); color: var(--text-normal); border: 1px dashed var(--background-modifier-border); border-radius: 6px; padding: 7px 10px; cursor: pointer; margin-bottom: 8px; }
 .wcc-settings-close { background: var(--background-secondary-alt); color: var(--text-normal); border: 1px solid var(--background-modifier-border); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
 
+/* 📋 Changelog panel. */
+.wcc-changelog-panel { position: absolute; right: 12px; top: 46px; z-index: 1300; background: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: 10px; box-shadow: 0 12px 36px rgba(0,0,0,.55); padding: 12px 14px; min-width: 360px; max-width: 520px; max-height: 70vh; display: flex; flex-direction: column; }
+.wcc-changelog-h { font-weight: 600; margin-bottom: 8px; }
+.wcc-changelog-body { overflow-y: auto; margin-bottom: 10px; font-size: 12.5px; line-height: 1.5; }
+.wcc-changelog-empty { color: var(--text-muted); font-size: 12px; }
+.wcc-changelog-section { font-weight: 600; color: var(--color-cyan); margin: 10px 0 4px; }
+.wcc-changelog-section:first-child { margin-top: 0; }
+.wcc-changelog-bullet { color: var(--text-normal); padding-left: 14px; position: relative; margin-bottom: 3px; }
+.wcc-changelog-bullet::before { content: '\2013'; position: absolute; left: 0; color: var(--text-muted); }
+.wcc-changelog-text { color: var(--text-muted); margin-bottom: 3px; }
+.wcc-changelog-gap { height: 4px; }
+.wcc-changelog-close { align-self: flex-end; background: var(--background-secondary-alt); color: var(--text-normal); border: 1px solid var(--background-modifier-border); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+
 /* Journal entry tile. */
 .cos-journal-btn { background: var(--background-secondary-alt); color: var(--text-normal); border: 1px solid var(--background-modifier-border); border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 12px; }
 .cos-journal-btn:hover { border-color: var(--interactive-accent); color: var(--text-normal); }

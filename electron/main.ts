@@ -13,6 +13,8 @@ function createWindow(): void {
 		? path.join(process.resourcesPath, 'pty-sidecar')
 		: path.join(__dirname, '..', 'pty-sidecar');
 	const userData = app.getPath('userData');
+	// Repo root — CHANGELOG.md, package.json, etc. sit here (same pattern as assets/ below).
+	const appRoot = path.join(__dirname, '..');
 
 	// App / taskbar icon. .ico (multi-size) on Windows for crisp small sizes; .png elsewhere.
 	// __dirname is dist/ in dev and inside app.asar when packaged — assets/ sits one level up in both.
@@ -48,7 +50,7 @@ function createWindow(): void {
 	});
 
 	// IPC: return resolved paths
-	ipcMain.handle('paths', () => ({ sidecarDir, userData }));
+	ipcMain.handle('paths', () => ({ sidecarDir, userData, appRoot, version: app.getVersion() }));
 
 	// IPC: read config.json from userData
 	ipcMain.handle('config:get', () => {

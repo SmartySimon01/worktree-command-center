@@ -8,13 +8,14 @@ import { UsageWidget } from './ui/usage-widget';
 import { AttentionWidget } from './ui/attention-widget';
 import { WorkspaceBar } from './ui/workspace-bar';
 import { SettingsPanel } from './ui/settings-panel';
+import { ChangelogPanel } from './ui/changelog-panel';
 import { normalizeWorkspaces, addWorkspace, closeWorkspace, nextActiveAfter, type Workspace } from './terminals/workspace-store';
 import * as path from 'path';
 
 declare global {
 	interface Window {
 		wcc: {
-			paths(): Promise<{ sidecarDir: string; userData: string }>;
+			paths(): Promise<{ sidecarDir: string; userData: string; appRoot: string; version: string }>;
 			getConfig(): Promise<any>;
 			setConfig(c: any): Promise<boolean>;
 			addFolder(): Promise<string | null>;
@@ -31,7 +32,7 @@ async function main(): Promise<void> {
 	try {
 		installDomShim();
 
-		const { sidecarDir, userData } = await window.wcc.paths();
+		const { sidecarDir, userData, appRoot, version } = await window.wcc.paths();
 		const cfg = await window.wcc.getConfig();
 		repos = Array.isArray(cfg.repos) ? cfg.repos : [];
 
@@ -93,6 +94,11 @@ async function main(): Promise<void> {
 			toast,
 		});
 		settingsBtn.addEventListener('click', () => { void settingsPanel.toggle(appEl); });
+
+		// 📋 Changelog button → panel with the current version + CHANGELOG.md.
+		const changelogBtn = topBar.createEl('button', { cls: 'wcc-changelog-btn', text: '📋 Changelog' });
+		const changelogPanel = new ChangelogPanel({ appRoot, version });
+		changelogBtn.addEventListener('click', () => changelogPanel.toggle(appEl));
 
 
 		// --- workspace tab bar ---
