@@ -23,4 +23,11 @@ export interface PrivateApi {
 	onWorkspaceSwitch: (cb: (id: string) => void) => void;
 	/** Dispose and recreate the usage battery probe+widget (re-reads the provider env). */
 	restartUsageProbe: () => void;
+	/** Ids of every open workspace (a workspace never visited this run has no grid yet —
+	 *  and therefore no sessions — so restartSessions skips it naturally). */
+	workspaceIds: () => string[];
+	/** Restart every live session in the given workspaces in place (--continue, fresh
+	 *  fallback) so a changed session env (e.g. another account) applies to ACTIVE
+	 *  terminals, not just future spawns. Interrupts any in-flight turns. */
+	restartSessions: (workspaceIds: string[]) => void;
 }

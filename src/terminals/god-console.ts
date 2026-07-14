@@ -203,11 +203,17 @@ export class GodConsole {
 			const ok = await promptForConfirm('Refresh Kane?', 'Kane is mid-response. Refreshing interrupts it and reloads with --continue (the conversation is kept).', 'Refresh');
 			if (!ok) return;
 		}
+		this.restartInPlace();
+	}
+
+	/** Restart Kane's session in place WITHOUT confirming — the account switch uses this so
+	 *  a live Kane moves to the new session env too (env re-read inside startSession). */
+	restartInPlace(): void {
 		if (this.busyTimer !== null) { window.clearTimeout(this.busyTimer); this.busyTimer = null; }
 		this.busy = false;
 		this.bridge?.kill();
 		this.term?.reset();
-		this.startSession(true, true); // ⟳: try --continue; if no conversation, fall back to a fresh session
+		this.startSession(true, true); // try --continue; if no conversation, fall back to a fresh session
 	}
 
 	/** Show/hide the panel WITHOUT killing the session. Refits on show. */

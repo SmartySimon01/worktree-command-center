@@ -174,6 +174,8 @@ async function main(): Promise<void> {
 				activeWorkspaceId: () => activeId,
 				onWorkspaceSwitch: (cb) => { wsSwitchCbs.push(cb); },
 				restartUsageProbe: () => startUsageProbe(),
+				workspaceIds: () => workspaces.map((w) => w.id),
+				restartSessions: (ids) => { for (const id of ids) grids.get(id)?.restartSessions(); },
 			});
 		} catch (e) {
 			toast('Private features failed to load: ' + e);

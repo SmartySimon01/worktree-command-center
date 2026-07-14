@@ -678,6 +678,16 @@ export class TerminalsGrid {
 		for (const k of this.extraKanes) k.notify(text);
 	}
 
+	/** Restart every live claude session in this workspace in place (--continue, fresh
+	 *  fallback) — visible + hidden terminals and every Kane console; journals have no
+	 *  session. The account switch uses this so ACTIVE terminals move to the new session
+	 *  env, not just future spawns. */
+	restartSessions(): void {
+		for (const t of [...this.tiles, ...this.hidden]) if (!t.isJournal) (t as TerminalTile).restartInPlace();
+		this.godConsole?.restartInPlace();
+		for (const k of this.extraKanes) k.restartInPlace();
+	}
+
 	private showGod(): void {
 		this.godVisible = true;
 		this.godConsole?.setVisible(true);

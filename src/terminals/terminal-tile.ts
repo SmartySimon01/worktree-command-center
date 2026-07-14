@@ -496,9 +496,16 @@ export class TerminalTile implements StageTile {
 			);
 			if (!ok) return;
 		}
+		this.restartInPlace();
+	}
+
+	/** Restart the session in place WITHOUT confirming — kill + relaunch with --continue
+	 *  (fresh fallback intact). The account switch uses this to move every live terminal to
+	 *  the new session env at once; the env is re-read inside startSession. */
+	restartInPlace(): void {
 		this.bridge?.kill();
 		this.term?.reset();
 		this.idle = false;
-		this.startSession(true, true); // ⟳: try --continue; if no conversation, fall back to a fresh session
+		this.startSession(true, true);
 	}
 }
