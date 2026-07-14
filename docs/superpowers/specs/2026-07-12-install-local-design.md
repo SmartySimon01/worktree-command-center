@@ -41,9 +41,13 @@ Rejected:
   and the `cos-coord` shims land on real disk at `process.resourcesPath/pty-sidecar`,
   exactly where `main.ts` already looks in packaged mode.
 - `files: ["dist/**", "index.html", "app.css", "styles.css", "assets/**"]` — the asar
-  carries only runtime files. Production `node_modules` (notably `node-pty`, external in
-  the main bundle) are included automatically; electron-builder auto-unpacks native
-  modules from the asar.
+  carries only runtime files. But an asar's `node_modules` only serve code running
+  *inside* the asar — the PTY sidecar runs standalone under system `node.exe` from
+  `resources/pty-sidecar/`, and Node resolves `require('node-pty')` up the sidecar
+  script's own directory chain, never into `app.asar`. So a second `extraResources`
+  entry copies `node_modules/node-pty` (stock N-API `prebuilds/win32-x64` binaries;
+  `build/**`, `src/**`, `deps/**`, `third_party/**` excluded) to
+  `resources/pty-sidecar/node_modules/node-pty`, putting it on that chain.
 - `directories.output: "release"` — installer artifacts stop landing in `dist/`.
   `release/` is gitignored.
 - **Per-user install stays the default** (`nsis.perMachine` remains unset/false). This is
@@ -51,6 +55,10 @@ Rejected:
   directory (`pty-sidecar/contexts/` — see `terminal-tile.ts`), so
   `process.resourcesPath` must be user-writable. `%LOCALAPPDATA%\Programs\...` is;
   `Program Files` would not be.
+- `nsis.runAfterFinish: false` — electron-builder's NSIS default is `true`, which
+  launches the app the moment the installer finishes. Nothing may auto-open the app,
+  including a plain double-clicked install run by hand outside `install-local`, so this
+  is set unconditionally in `build.nsis`, not left to the script to suppress.
 
 ## 2. `npm run install-local` (`scripts/install-local.mjs`)
 

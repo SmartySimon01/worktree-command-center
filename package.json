@@ -45,6 +45,11 @@
         "from": "pty-sidecar",
         "to": "pty-sidecar",
         "filter": ["**/*", "!contexts/**"]
+      },
+      {
+        "from": "node_modules/node-pty",
+        "to": "pty-sidecar/node_modules/node-pty",
+        "filter": ["**/*", "!build/**", "!src/**", "!deps/**", "!third_party/**"]
       }
     ],
     "win": {
@@ -54,7 +59,8 @@
     "nsis": {
       "installerIcon": "assets/icon.ico",
       "uninstallerIcon": "assets/icon.ico",
-      "shortcutName": "Worktree Command Center"
+      "shortcutName": "Worktree Command Center",
+      "runAfterFinish": false
     }
   }
 }

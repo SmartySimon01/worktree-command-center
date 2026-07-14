@@ -8,8 +8,13 @@
 // from public release/ installers.
 import { execSync, spawnSync } from 'child_process';
 import { existsSync, readdirSync, statSync } from 'fs';
-import { join } from 'path';
+import { dirname, join } from 'path';
 import { homedir, platform } from 'os';
+import { fileURLToPath } from 'url';
+
+// Relative paths (private/, release-private/) assume the repo root — normalize cwd
+// so `node scripts/install-local.mjs` works from anywhere, not just via npm.
+process.chdir(join(dirname(fileURLToPath(import.meta.url)), '..'));
 
 if (platform() !== 'win32') {
 	console.error('[install-local] Windows only — this packages and installs an NSIS app.');
@@ -45,7 +50,8 @@ spawnSync('taskkill', ['/IM', EXE, '/F'], { stdio: 'ignore' });
 console.log(`[install-local] installing ${installer} silently…`);
 const inst = spawnSync(installer, ['/S'], { stdio: 'inherit' });
 if (inst.status !== 0) {
-	console.error(`[install-local] installer exited with code ${inst.status}`);
+	const why = inst.status === null ? `failed to start: ${inst.error?.message ?? 'unknown error'}` : `exited with code ${inst.status}`;
+	console.error(`[install-local] installer ${why}`);
 	process.exit(1);
 }
 
@@ -54,9 +60,14 @@ if (inst.status !== 0) {
 // %LOCALAPPDATA%\Programs\<dir derived from productName>; glob instead of hardcoding.
 const programs = join(process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local'), 'Programs');
 let installed = null;
-for (const d of readdirSync(programs)) {
-	const p = join(programs, d, EXE);
-	if (existsSync(p)) { installed = p; break; }
+try {
+	for (const d of readdirSync(programs)) {
+		const p = join(programs, d, EXE);
+		if (existsSync(p)) { installed = p; break; }
+	}
+} catch {
+	// %LOCALAPPDATA%\Programs may not exist (e.g. NSIS honored a remembered
+	// non-default install dir) — fall through to the not-found warning below.
 }
 if (!installed) {
 	console.log(`[install-local] warning: ${EXE} not found under ${programs}\\* — the installer reported success, so check the Start Menu.`);
