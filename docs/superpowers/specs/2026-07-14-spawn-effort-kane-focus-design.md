@@ -104,6 +104,51 @@ Alt+K opens/focuses Kane.
   `godConsole.focus()`. Never toggles closed.
 - Kane button title gains "(Alt+K)".
 
+## 6. Kane names terminals (`--name` at spawn + `rename` verb)
+
+- `cos-coord spawn` gains optional `--name "<terminal name>"`: rides the same pipeline
+  (cli flag → outbox `name: string|null` → parse → `spawnWorktree` opts.name →
+  `makeTile`'s existing name parameter). The name persists via the existing
+  displayName/sessionRecord path.
+- New god-only verb: `cos-coord rename "<exact terminal name>" --to "<new name>"` →
+  outbox `{ kind: 'rename', target, name }` → dispatch resolves via `resolveTellTarget`
+  and calls `TerminalTile.setName(name)` (`terminal-tile.ts:405` — fires `onRename`, so
+  the grid persists it). Target not found or a journal tile → god-inbox error.
+- Kane's system prompt documents both.
+
+## 7. Duplicate Kane (multiple consoles)
+
+- New topbar button `🜲+` right after the Kane button: each click docks ANOTHER Kane
+  panel beside the existing one(s) — a fully separate `claude` session.
+- Primary Kane is untouched (Kane button toggle, Alt+K, `godVisible` semantics).
+  Duplicates live in `extraKanes: GodConsole[]` with a monotonic sequence (`Kane 2`,
+  `Kane 3`, …; a grid-level counter, so closing one never reuses a live number):
+  - own home dir `.god/<group>-<n>` → separate conversation; home dirs are reused
+    across app restarts (harmless — duplicates start fresh sessions anyway);
+  - `GodConsoleOpts` gains `instanceName?: string` (default `'Kane'`) and
+    `terminalId?: string` (default `'0'`; duplicates get `String(-n)`) — used for the
+    head label, `COS_TERMINAL_NAME`/`COS_TERMINAL_ID`, and the session-ended line;
+  - the × on a duplicate disposes it entirely (session killed, panel removed);
+    duplicates are NOT persisted across app restarts;
+  - `notify()` broadcasts to primary + all duplicates (watch pings, personality
+    injections, pulses) — they share the god role and any of them may have registered
+    the watch;
+  - every instance feeds the same `godFocused` flag (`focusout` fires before the next
+    `focusin`, so one boolean stays correct);
+  - creating a duplicate also `startFloorFeed()`s (outbox + floor snapshots are shared).
+
+## 8. Kane panel resize (drag the left edge)
+
+- `.cos-god-panel` is a fixed flex column (`flex:0 0 380px`, `styles.css:854`). Every
+  Kane panel gets a 6 px left-edge grip (`.cos-god-resize`, `cursor: ew-resize`; the
+  panel gains `position:relative`).
+- Drag: `mousedown` on the grip → document-level `mousemove`/`mouseup`; new width =
+  startWidth + (startX − clientX) (panels dock on the right), clamped to
+  [280 px, 70 % of the window], applied as `flex: 0 0 <px>px`. The body's existing
+  `ResizeObserver` refits xterm live during the drag.
+- On mouseup the width persists to `localStorage['cos-god-width']` and is applied to
+  every Kane panel at render (one shared width, not per-instance).
+
 ## Error handling
 
 - Invalid `--effort` from Kane → god-inbox error listing valid values; no spawn.
@@ -112,6 +157,9 @@ Alt+K opens/focuses Kane.
 - Missing selects (grid not mounted) → optional-chaining fallbacks yield undefined → no
   flags (CLI defaults), same as today.
 - `onFocusChange` absent (other GodConsole embeddings) → optional, no-op.
+- `rename` target not found or a journal tile → god-inbox error, nothing renamed.
+- Blank `--name`/`--to` values → treated as absent (spawn proceeds unnamed; rename is
+  dropped by the CLI before reaching the outbox).
 
 ## Testing
 
@@ -126,9 +174,13 @@ Alt+K opens/focuses Kane.
   CLI doesn't validate locally, one minimal `-p` call with `--effort ultracode` must
   succeed). If ultracode is NOT accepted, drop it from `EFFORT_LEVELS` and note it — the
   rest of the feature stands.
-- Grid/DOM behaviors (dropdown visible, hold timing, Kane focus, Alt+K) are manually
-  verified by the user later — nothing in implementation or verification may launch the
-  app (standing constraint).
+- Name/rename coverage: parse tests for spawn `name` and the `rename` message
+  (`tests/god.test.ts`), CLI tests for `spawn --name` and the `rename` verb
+  (`tests/coord-cli.test.ts`), store test for the new outbox fields
+  (`tests/coord-store.test.ts`).
+- Grid/DOM behaviors (dropdowns, hold timing, Kane focus, Alt+K, duplicate Kanes,
+  drag-resize) are manually verified by the user later — nothing in implementation or
+  verification may launch the app (standing constraint).
 - Full vitest suite stays green.
 
 ## Non-goals
@@ -137,3 +189,6 @@ Alt+K opens/focuses Kane.
 - No persistence of the dropdowns' own selections across app restarts (matches the model
   dropdown's current behavior).
 - No configurable hold duration; 30 s constant.
+- Duplicate Kanes are not persisted across app restarts; no per-duplicate width memory
+  (one shared width).
+- No rename of Kane consoles themselves; `rename` targets worker terminals only.

@@ -148,18 +148,21 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
 
 ---
 
-### Task 2: Kane spawn `--model` / `--effort`
+### Task 2: Kane spawn `--model` / `--effort` / `--name` + `rename` verb
 
 **Files:**
-- Modify: `pty-sidecar/coord-cli.cjs` (spawn branch lines 57-64, usage line 87)
-- Modify: `pty-sidecar/coord-store.cjs` (`spawn` function, line 108)
+- Modify: `pty-sidecar/coord-cli.cjs` (spawn branch lines 57-64, new rename branch, usage line 87)
+- Modify: `pty-sidecar/coord-store.cjs` (`spawn` function line 108, new `rename` function + export)
 - Modify: `src/terminals/god.ts` (`OutboxMessage` line 12, `parseOutboxMessage` lines 17-39, `godSystemPrompt` lines 109-111)
-- Modify: `src/terminals/terminals-grid.ts` (`dispatchOutbox` line 706, `spawnFromKane` lines 396-400, `spawnFromName` lines 573-579)
+- Modify: `src/terminals/terminals-grid.ts` (`dispatchOutbox` lines 693-708, `spawnFromKane` lines 394-400, `spawnFromName` lines 572-579)
 - Test: `tests/god.test.ts`, `tests/coord-cli.test.ts`, `tests/coord-store.test.ts`
 
+Line numbers above are pre-Task-1; Task 1 added ~25 lines to `terminals-grid.ts` — locate by the quoted code, not the number.
+
 **Interfaces:**
-- Consumes: `EFFORT_LEVELS` and `spawnWorktree`'s `{ task, model, effort }` opts from Task 1.
-- Produces: `store.spawn(dir, repo, base, task, model, effort)`; outbox JSON `{ kind:'spawn', repo, base, task, model: string|null, effort: string|null }`; `OutboxMessage` spawn variant with `model`/`effort`; `spawnFromName(repoName, base, task, model?: string, effort?: string)`.
+- Consumes: `EFFORT_LEVELS` and `spawnWorktree`'s `{ task, model, effort, name }` opts from Task 1 (Task 1 shipped `{ task, model, effort }`; this task adds `name?: string` to the opts type and threads it to `makeTile`'s existing 6th parameter).
+- Consumes: `TerminalTile.setName(name)` (`terminal-tile.ts:405`) — sets displayName, fires `onRename` (grid persists). `resolveTellTarget` from `./god`.
+- Produces: `store.spawn(dir, repo, base, task, model, effort, name)`; `store.rename(dir, target, to)`; outbox JSONs `{ kind:'spawn', repo, base, task, model: string|null, effort: string|null, name: string|null }` and `{ kind:'rename', target, name }`; `OutboxMessage` spawn variant with `model`/`effort`/`name` + new rename variant; `spawnFromName(repoName, base, task, model?: string, effort?: string, name?: string)`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -168,57 +171,69 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
 ```ts
 	it('parses a spawn with and without a base', () => {
 		expect(parseOutboxMessage('{"kind":"spawn","repo":"app","base":"main","task":"do X"}'))
-			.toEqual({ kind: 'spawn', repo: 'app', base: 'main', task: 'do X', model: null, effort: null });
+			.toEqual({ kind: 'spawn', repo: 'app', base: 'main', task: 'do X', model: null, effort: null, name: null });
 		expect(parseOutboxMessage('{"kind":"spawn","repo":"app","task":"do X"}'))
-			.toEqual({ kind: 'spawn', repo: 'app', base: null, task: 'do X', model: null, effort: null });
+			.toEqual({ kind: 'spawn', repo: 'app', base: null, task: 'do X', model: null, effort: null, name: null });
 	});
 ```
 
 ADD below it:
 
 ```ts
-	it('parses spawn model/effort, lowercasing effort and nulling junk', () => {
-		expect(parseOutboxMessage('{"kind":"spawn","repo":"app","task":"x","model":"opus","effort":"MAX"}'))
-			.toEqual({ kind: 'spawn', repo: 'app', base: null, task: 'x', model: 'opus', effort: 'max' });
-		expect(parseOutboxMessage('{"kind":"spawn","repo":"app","task":"x","model":"  ","effort":42}'))
-			.toEqual({ kind: 'spawn', repo: 'app', base: null, task: 'x', model: null, effort: null });
+	it('parses spawn model/effort/name, lowercasing effort and nulling junk', () => {
+		expect(parseOutboxMessage('{"kind":"spawn","repo":"app","task":"x","model":"opus","effort":"MAX","name":"Linehaul"}'))
+			.toEqual({ kind: 'spawn', repo: 'app', base: null, task: 'x', model: 'opus', effort: 'max', name: 'Linehaul' });
+		expect(parseOutboxMessage('{"kind":"spawn","repo":"app","task":"x","model":"  ","effort":42,"name":" "}'))
+			.toEqual({ kind: 'spawn', repo: 'app', base: null, task: 'x', model: null, effort: null, name: null });
+	});
+	it('parses a rename and rejects blank fields', () => {
+		expect(parseOutboxMessage('{"kind":"rename","target":"wt-1","name":"Linehaul fix"}'))
+			.toEqual({ kind: 'rename', target: 'wt-1', name: 'Linehaul fix' });
+		expect(parseOutboxMessage('{"kind":"rename","target":"wt-1","name":"  "}')).toBeNull();
+		expect(parseOutboxMessage('{"kind":"rename","target":"","name":"x"}')).toBeNull();
 	});
 ```
 
 In the `godSystemPrompt` describe (near line 93), extend the spawn-docs test:
 
 ```ts
-	it('documents the watch and spawn commands', () => {
+	it('documents the watch, spawn, and rename commands', () => {
 		expect(p).toContain('cos-coord watch');
 		expect(p).toContain('cos-coord spawn');
 		expect(p).toContain('--model');
 		expect(p).toContain('--effort low|medium|high|xhigh|max|ultracode');
+		expect(p).toContain('--name');
+		expect(p).toContain('cos-coord rename');
 	});
 ```
 
 `tests/coord-cli.test.ts` — in the `'watch/spawn are god-only and drop tagged files'` test, after the existing spawn exec (line 75), add a flagged spawn and extend the assertions:
 
 ```ts
-		execFileSync('node', [CLI, 'spawn', 'app', '--base', 'main', '--task', 'do Y', '--model', 'opus', '--effort', 'max'], { env: god, encoding: 'utf8' });
+		execFileSync('node', [CLI, 'spawn', 'app', '--base', 'main', '--task', 'do Y', '--model', 'opus', '--effort', 'max', '--name', 'Linehaul'], { env: god, encoding: 'utf8' });
+		execFileSync('node', [CLI, 'rename', 'wt-1', '--to', 'Linehaul fix'], { env: god, encoding: 'utf8' });
 ```
 
 and after the existing `expect(msgs.find((m) => m.kind === 'spawn'))...` line:
 
 ```ts
-		expect(msgs.find((m) => m.kind === 'spawn' && m.task === 'do X')).toMatchObject({ model: null, effort: null });
-		expect(msgs.find((m) => m.kind === 'spawn' && m.task === 'do Y')).toMatchObject({ model: 'opus', effort: 'max' });
+		expect(msgs.find((m) => m.kind === 'spawn' && m.task === 'do X')).toMatchObject({ model: null, effort: null, name: null });
+		expect(msgs.find((m) => m.kind === 'spawn' && m.task === 'do Y')).toMatchObject({ model: 'opus', effort: 'max', name: 'Linehaul' });
+		expect(msgs.find((m) => m.kind === 'rename')).toMatchObject({ target: 'wt-1', name: 'Linehaul fix' });
 ```
 
 `tests/coord-store.test.ts` — add one test inside the file's existing describe, using its existing temp-dir setup variable (read the file; it already exercises `store.spawn`-adjacent outbox helpers — follow its local pattern for `dir`):
 
 ```ts
-	it('spawn records model/effort, null when omitted', () => {
+	it('spawn records model/effort/name (null when omitted); rename drops a tagged file', () => {
 		store.spawn(dir, 'app', '', 'do X');
-		store.spawn(dir, 'app', 'main', 'do Y', 'opus', 'max');
+		store.spawn(dir, 'app', 'main', 'do Y', 'opus', 'max', 'Linehaul');
+		store.rename(dir, 'wt-1', 'Linehaul fix');
 		const msgs = fs.readdirSync(path.join(dir, 'god-outbox')).filter((f) => f.endsWith('.json'))
 			.map((f) => JSON.parse(fs.readFileSync(path.join(dir, 'god-outbox', f), 'utf8')));
-		expect(msgs.find((m) => m.task === 'do X')).toMatchObject({ model: null, effort: null });
-		expect(msgs.find((m) => m.task === 'do Y')).toMatchObject({ model: 'opus', effort: 'max' });
+		expect(msgs.find((m) => m.task === 'do X')).toMatchObject({ model: null, effort: null, name: null });
+		expect(msgs.find((m) => m.task === 'do Y')).toMatchObject({ model: 'opus', effort: 'max', name: 'Linehaul' });
+		expect(msgs.find((m) => m.kind === 'rename')).toMatchObject({ target: 'wt-1', name: 'Linehaul fix' });
 	});
 ```
 
@@ -229,13 +244,14 @@ Expected: the updated/new spawn tests FAIL (parse result lacks `model`/`effort`;
 
 - [ ] **Step 3: Implement**
 
-`pty-sidecar/coord-store.cjs` line 108:
+`pty-sidecar/coord-store.cjs` — replace line 108 and add `rename` beside it (and add `rename` to the `module.exports` list on line 111):
 
 ```js
-function spawn(dir, repo, base, task, model, effort) { return dropOutbox(dir, { kind: 'spawn', repo, base: base || null, task, model: model || null, effort: effort || null }); }
+function spawn(dir, repo, base, task, model, effort, name) { return dropOutbox(dir, { kind: 'spawn', repo, base: base || null, task, model: model || null, effort: effort || null, name: name || null }); }
+function rename(dir, target, to) { return dropOutbox(dir, { kind: 'rename', target, name: to }); }
 ```
 
-`pty-sidecar/coord-cli.cjs` spawn branch (lines 57-64):
+`pty-sidecar/coord-cli.cjs` — replace the spawn branch (lines 57-64) and add a rename branch directly below it:
 
 ```js
   if (cmd === 'spawn') {
@@ -245,24 +261,34 @@ function spawn(dir, repo, base, task, model, effort) { return dropOutbox(dir, { 
     const task = flag(rest, '--task') || '';
     const model = flag(rest, '--model') || '';
     const effort = flag(rest, '--effort') || '';
-    if (repo && task) store.spawn(dir, repo, base, task, model, effort);
+    const name = flag(rest, '--name') || '';
+    if (repo && task) store.spawn(dir, repo, base, task, model, effort, name);
+    process.exit(0);
+  }
+
+  if (cmd === 'rename') {
+    if (env('COS_ROLE') !== 'god') process.exit(0); // only GOD may rename worker terminals
+    const target = resource;
+    const to = flag(rest, '--to') || '';
+    if (target && to.trim()) store.rename(dir, target, to);
     process.exit(0);
   }
 ```
 
-Usage line 87 — append the new flags:
+Usage line 87 — new verb + flags:
 
 ```js
-  console.error('usage: cos-coord <status|acquire|release|note|chat|tell|watch|spawn|personality> [resource] [--reason "…"] [--ttl <sec>] [--note "…"] [--base <branch>] [--task "…"] [--model <model>] [--effort <level>]');
+  console.error('usage: cos-coord <status|acquire|release|note|chat|tell|watch|spawn|rename|personality> [resource] [--reason "…"] [--ttl <sec>] [--note "…"] [--base <branch>] [--task "…"] [--model <model>] [--effort <level>] [--name "…"] [--to "…"]');
 ```
 
-`src/terminals/god.ts` — `OutboxMessage` spawn variant (line 12):
+`src/terminals/god.ts` — `OutboxMessage` spawn variant (line 12) plus a rename variant:
 
 ```ts
-	| { kind: 'spawn'; repo: string; base: string | null; task: string; model: string | null; effort: string | null }
+	| { kind: 'spawn'; repo: string; base: string | null; task: string; model: string | null; effort: string | null; name: string | null }
+	| { kind: 'rename'; target: string; name: string }
 ```
 
-`parseOutboxMessage` — extend the local type (line 18) with `model?: unknown; effort?: unknown`, and the spawn branch (lines 32-36):
+`parseOutboxMessage` — extend the local type (line 18) with `model?: unknown; effort?: unknown; name?: unknown`, replace the spawn branch (lines 32-36), and add a rename branch after it:
 
 ```ts
 	} else if (kind === 'spawn') {
@@ -270,7 +296,12 @@ Usage line 87 — append the new flags:
 			const base = typeof o.base === 'string' && o.base.trim() ? o.base : null;
 			const model = typeof o.model === 'string' && o.model.trim() ? o.model.trim() : null;
 			const effort = typeof o.effort === 'string' && o.effort.trim() ? o.effort.trim().toLowerCase() : null;
-			return { kind: 'spawn', repo: o.repo, base, task: o.task, model, effort };
+			const name = typeof o.name === 'string' && o.name.trim() ? o.name.trim() : null;
+			return { kind: 'spawn', repo: o.repo, base, task: o.task, model, effort, name };
+		}
+	} else if (kind === 'rename') {
+		if (typeof o.target === 'string' && typeof o.name === 'string' && o.target.trim() && o.name.trim()) {
+			return { kind: 'rename', target: o.target, name: o.name.trim() };
 		}
 	}
 ```
@@ -279,16 +310,24 @@ Usage line 87 — append the new flags:
 
 ```ts
 		'  - To open a NEW worktree terminal and start it on a task, run:',
-		'    cos-coord spawn "<repo>" --base "<branch>" --task "<first instruction>" [--model <alias-or-id>] [--effort low|medium|high|xhigh|max|ultracode]',
+		'    cos-coord spawn "<repo>" --base "<branch>" --task "<first instruction>" [--model <alias-or-id>] [--effort low|medium|high|xhigh|max|ultracode] [--name "<terminal name>"]',
 		'    --base is optional (defaults to the repo\'s main). --model takes an alias (opus, sonnet, haiku,',
 		'    fable) or a full model id. Flags you omit inherit the user\'s toolbar dropdowns. Repo names +',
 		'    paths are listed below.',
+		'  - To rename a worker terminal, run:  cos-coord rename "<exact terminal name>" --to "<new name>"',
 ```
 
-`src/terminals/terminals-grid.ts` — `dispatchOutbox` else branch (line 706):
+`src/terminals/terminals-grid.ts` — `dispatchOutbox`: the else branch becomes the spawn call below, AND a rename branch is added before it (after the personality branch):
 
 ```ts
-			void this.spawnFromKane(msg.repo, msg.base, msg.task, msg.model, msg.effort);
+		} else if (msg.kind === 'rename') {
+			const name = resolveTellTarget(msg.target, liveNames);
+			const tile = name ? this.allSessions().find((t) => t.name === name) : undefined;
+			if (tile && !tile.isJournal) (tile as TerminalTile).setName(msg.name);
+			else this.writeGodInbox(`cannot rename "${msg.target}" — not a live terminal. Live: ${liveNames.join(', ') || '(none)'}`);
+		} else {
+			void this.spawnFromKane(msg.repo, msg.base, msg.task, msg.model, msg.effort, msg.name);
+		}
 ```
 
 `spawnFromKane` (lines 394-400):
@@ -296,14 +335,14 @@ Usage line 87 — append the new flags:
 ```ts
 	/** Kane asked to spawn a terminal: resolve the repo by name, validate the effort, default the
 	 *  base branch, start it on the given task. Invalid effort → error note, no spawn. */
-	private async spawnFromKane(repoName: string, base: string | null, task: string, model: string | null = null, effort: string | null = null): Promise<void> {
+	private async spawnFromKane(repoName: string, base: string | null, task: string, model: string | null = null, effort: string | null = null, name: string | null = null): Promise<void> {
 		const known = this.repos.some((r) => r.name === repoName || r.name.toLowerCase() === repoName.toLowerCase());
 		if (!known) { this.writeGodInbox(`cannot spawn — unknown repo "${repoName}". Known: ${this.repos.map((r) => r.name).join(', ') || '(none)'}`); return; }
 		if (effort !== null && !(EFFORT_LEVELS as readonly string[]).includes(effort)) {
 			this.writeGodInbox(`cannot spawn — invalid --effort "${effort}". Valid: ${EFFORT_LEVELS.join(', ')}`);
 			return;
 		}
-		await this.spawnFromName(repoName, base, task, model ?? undefined, effort ?? undefined);
+		await this.spawnFromName(repoName, base, task, model ?? undefined, effort ?? undefined, name ?? undefined);
 	}
 ```
 
@@ -311,14 +350,21 @@ Usage line 87 — append the new flags:
 
 ```ts
 	/** Spawn a worktree terminal for a repo by name, on a base, with a kickoff task. Model/effort
-	 *  override the toolbar dropdowns when given (spawnWorktree applies the fallback). */
-	async spawnFromName(repoName: string, base: string | null, task: string, model?: string, effort?: string): Promise<TerminalTile | null> {
+	 *  override the toolbar dropdowns when given (spawnWorktree applies the fallback); name
+	 *  overrides the default branch-derived terminal name. */
+	async spawnFromName(repoName: string, base: string | null, task: string, model?: string, effort?: string, name?: string): Promise<TerminalTile | null> {
 		const repo = this.repos.find((r) => r.name === repoName)
 			?? this.repos.find((r) => r.name.toLowerCase() === repoName.toLowerCase());
 		if (!repo) return null;
 		const baseBranch = base ?? (defaultBranch(await listBranches(repo.path)) ?? 'main');
-		return this.spawnWorktree(repo, baseBranch, { task, model, effort });
+		return this.spawnWorktree(repo, baseBranch, { task, model, effort, name });
 	}
+```
+
+`spawnWorktree` — the opts type gains `name?: string` (full type: `{ task?: string; model?: string; effort?: string; name?: string }`), and its `makeTile` call passes it through the existing 6th (name) parameter, which Task 1 left as `undefined`:
+
+```ts
+			const tile = this.makeTile(worktree, repo.name, repo.path, base, false, opts.name, model, effort);
 ```
 
 - [ ] **Step 4: Run the three test files**
@@ -335,7 +381,7 @@ Run: `npx tsc -noEmit -skipLibCheck` → clean. `npm test` → all pass.
 ```powershell
 git add pty-sidecar/coord-cli.cjs pty-sidecar/coord-store.cjs src/terminals/god.ts src/terminals/terminals-grid.ts tests/god.test.ts tests/coord-cli.test.ts tests/coord-store.test.ts
 git commit -m @'
-feat(kane): cos-coord spawn accepts --model and --effort
+feat(kane): spawn accepts --model/--effort/--name; new rename verb
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
 '@
@@ -353,7 +399,7 @@ No unit tests are possible for this task (DOM/session wiring; the repo has no te
 
 **Interfaces:**
 - Consumes: `decideCenter`'s `userTyping` hold (`focus-decider.ts:38`); `GodConsole.focus()`, `setVisible()`; `toggleGod`/`showGod`.
-- Produces: nothing consumed by later tasks (final task).
+- Produces: `GodConsoleOpts.onFocusChange` and the grid's `godFocused` flag — Task 4 wires every duplicate console into the same flag; Task 5 places its resize grip right below Task 3's focusin/focusout listeners in `render()`.
 
 - [ ] **Step 1: GodConsole focus reporting**
 
@@ -489,6 +535,207 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
 
 ---
 
-### Task 4: Post-merge human verification (user, later — not the implementer)
+### Task 4: Duplicate Kane (multiple consoles)
 
-No files. The user verifies in the running app on their own schedule: effort dropdown appears and a terminal spawned with `Effort: Max` accepts it; Kane `cos-coord spawn ... --model sonnet --effort high` opens a terminal; typing in Kane while another terminal finishes no longer loses focus; clicking off a menu tile sticks for ~30 s; Alt+←/→ still flows; Alt+K opens/focuses Kane.
+**Files:**
+- Modify: `src/terminals/god-console.ts` (`GodConsoleOpts` gains `instanceName`/`terminalId`; head label, env, exit message use them)
+- Modify: `src/terminals/terminals-grid.ts` (`extraKanes` field + `kaneSeq` counter, `🜲+` button, `addKane()`, `notifyKanes()` broadcast replacing the three `godConsole?.notify(...)` call sites, extras torn down where the grid disposes the primary)
+
+No unit tests possible (DOM/session wiring — same rationale as Task 3). Gate: typecheck clean, suite green, code matches plan. NEVER launch the app.
+
+**Interfaces:**
+- Consumes: `GodConsole` (existing `dispose()` at `god-console.ts:298`, `notify()`, `render()`, `focus()`); Task 3's `onFocusChange` opt and `godFocused` flag; `startFloorFeed()`.
+- Produces: nothing later tasks rely on.
+
+- [ ] **Step 1: GodConsole instance identity**
+
+`src/terminals/god-console.ts` — `GodConsoleOpts` gains (after `onFocusChange?`):
+
+```ts
+	instanceName?: string;   // head label + COS_TERMINAL_NAME (default 'Kane')
+	terminalId?: string;     // COS_TERMINAL_ID for cos-coord identity (default '0')
+```
+
+In `render()`, the head label (line 43) becomes:
+
+```ts
+		head.createSpan({ text: `🜲 ${this.opts.instanceName ?? 'Kane'}` });
+```
+
+In `startSession()`, the env entries (lines 136-137) become:
+
+```ts
+			COS_TERMINAL_ID: this.opts.terminalId ?? '0',
+			COS_TERMINAL_NAME: this.opts.instanceName ?? 'Kane',
+```
+
+and the session-ended line (line 151) becomes:
+
+```ts
+			this.term?.write(`\r\n[${this.opts.instanceName ?? 'Kane'} session ended (code ${code ?? '?'})]\r\n`);
+```
+
+- [ ] **Step 2: Grid — button, addKane, broadcast, teardown**
+
+`src/terminals/terminals-grid.ts` — fields, next to `extraKanes`-adjacent god fields:
+
+```ts
+	private extraKanes: GodConsole[] = [];
+	private kaneSeq = 1; // monotonic: duplicates are Kane 2, 3, … — numbers never reused in-session
+```
+
+In `mount()`, directly after the `godBtn` block:
+
+```ts
+		const kaneDupBtn = controls.createEl('button', { text: '🜲+', cls: 'cos-god-btn' });
+		kaneDupBtn.setAttribute('title', 'Add another Kane console — a separate session in its own panel (close it with its ×)');
+		kaneDupBtn.addEventListener('click', () => this.addKane());
+```
+
+New method, after `openKane()`:
+
+```ts
+	/** Dock an ADDITIONAL Kane console — its own session + home dir. Duplicates are cheap:
+	 *  the × disposes them entirely and they are not persisted across app restarts. */
+	private addKane(): void {
+		const n = ++this.kaneSeq;
+		const godHomeDir = path.join(this.coordDir, '..', '.god', `${this.deps.group}-${n}`);
+		const kane = new GodConsole(
+			{
+				repos: this.repos.map((r) => ({ name: r.name, path: r.path })),
+				coordDir: this.coordDir,
+				sidecarPath: this.sidecarPath,
+				godHomeDir,
+				sessionEnv: this.deps.sessionEnv,
+				onFocusChange: (f) => { this.godFocused = f; },
+				instanceName: `Kane ${n}`,
+				terminalId: String(-n),
+			},
+			() => {
+				kane.dispose();
+				this.extraKanes = this.extraKanes.filter((k) => k !== kane);
+				this.applyLayout();
+			},
+		);
+		if (this.stageWrapEl) kane.render(this.stageWrapEl);
+		this.extraKanes.push(kane);
+		this.startFloorFeed();
+		this.applyLayout();
+		kane.focus();
+	}
+```
+
+Broadcast helper, next to it:
+
+```ts
+	/** Ping the primary Kane and every duplicate (they share the god role — any of them
+	 *  may have registered the watch or flipped the personality). */
+	private notifyKanes(text: string): void {
+		this.godConsole?.notify(text);
+		for (const k of this.extraKanes) k.notify(text);
+	}
+```
+
+Replace the three existing `this.godConsole?.notify(...)` call sites with `this.notifyKanes(...)`: the watch firing in `handleReady` (line 877), both personality branches in `togglePersonality` (lines 716, 719), and the pulse in `startPulse` (line 729).
+
+Teardown: locate where the grid disposes the primary console (`grep -n "godConsole" src/terminals/terminals-grid.ts` — the `dispose()`/unmount path calling `this.godConsole?.dispose()`), and add immediately after it:
+
+```ts
+		for (const k of this.extraKanes) k.dispose();
+		this.extraKanes = [];
+```
+
+- [ ] **Step 3: Typecheck + full suite**
+
+Run: `npx tsc -noEmit -skipLibCheck` → clean. `npm test` → all pass.
+
+- [ ] **Step 4: Commit**
+
+```powershell
+git add src/terminals/god-console.ts src/terminals/terminals-grid.ts
+git commit -m @'
+feat(kane): duplicate Kane — extra overseer consoles, each its own session
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+'@
+```
+
+---
+
+### Task 5: Kane panel drag-resize
+
+**Files:**
+- Modify: `src/terminals/god-console.ts` (`render()` — width restore + left-edge grip with drag logic)
+- Modify: `styles.css` (line 854 `.cos-god-panel` gains `position:relative;`; new `.cos-god-resize` rules after line 858)
+
+No unit tests possible (DOM drag wiring). Gate: typecheck clean, suite green, code matches plan. NEVER launch the app.
+
+**Interfaces:**
+- Consumes: `.cos-god-panel { flex:0 0 380px; … }` (`styles.css:854`); the body's existing `ResizeObserver` (refits xterm on any size change — no extra fit calls needed).
+- Produces: `localStorage['cos-god-width']` (shared width, applied to every Kane panel at render).
+
+- [ ] **Step 1: styles.css**
+
+Line 854 — add `position:relative;` to the existing `.cos-god-panel` rule (keep everything else on the line unchanged):
+
+```css
+.cos-god-panel { position:relative; flex:0 0 380px; min-height:0; display:flex; flex-direction:column; min-width:0; background:#0e0f17; border:1px solid var(--background-modifier-border); border-radius:10px; overflow:hidden; }
+```
+
+After the `.cos-god-body` rule (line 858), add:
+
+```css
+.cos-god-resize { position:absolute; left:0; top:0; bottom:0; width:6px; cursor:ew-resize; z-index:5; }
+.cos-god-resize:hover, .cos-god-resize.dragging { background:rgba(120,140,255,0.25); }
+```
+
+- [ ] **Step 2: grip + drag logic**
+
+`src/terminals/god-console.ts`, in `render()`, immediately after the `focusin`/`focusout` listeners (Task 3 placed them right below `this.el = parent.createDiv(...)`):
+
+```ts
+		// Left-edge grip: drag to resize the panel width. One shared width for every Kane
+		// panel, persisted across sessions; the body's ResizeObserver refits xterm live.
+		const saved = Number(window.localStorage.getItem('cos-god-width'));
+		if (Number.isFinite(saved) && saved >= 280) this.el.style.flex = `0 0 ${Math.round(saved)}px`;
+		const grip = this.el.createDiv({ cls: 'cos-god-resize' });
+		grip.addEventListener('mousedown', (e) => {
+			e.preventDefault();
+			const startX = e.clientX;
+			const startW = this.el!.getBoundingClientRect().width;
+			grip.classList.add('dragging');
+			const move = (ev: MouseEvent): void => {
+				const w = Math.min(Math.max(280, startW + (startX - ev.clientX)), Math.round(window.innerWidth * 0.7));
+				this.el!.style.flex = `0 0 ${Math.round(w)}px`;
+			};
+			const up = (): void => {
+				grip.classList.remove('dragging');
+				document.removeEventListener('mousemove', move);
+				document.removeEventListener('mouseup', up);
+				window.localStorage.setItem('cos-god-width', String(Math.round(this.el!.getBoundingClientRect().width)));
+			};
+			document.addEventListener('mousemove', move);
+			document.addEventListener('mouseup', up);
+		});
+```
+
+- [ ] **Step 3: Typecheck + full suite**
+
+Run: `npx tsc -noEmit -skipLibCheck` → clean. `npm test` → all pass.
+
+- [ ] **Step 4: Commit**
+
+```powershell
+git add src/terminals/god-console.ts styles.css
+git commit -m @'
+feat(kane): drag the left edge to resize the Kane panel (width persists)
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+'@
+```
+
+---
+
+### Task 6: Post-merge human verification (user, later — not the implementer)
+
+No files. The user verifies in the running app on their own schedule: effort dropdown appears and a terminal spawned with `Effort: Max` accepts it; Kane `cos-coord spawn ... --model sonnet --effort high --name "Linehaul"` opens a terminal with that name; `cos-coord rename` changes a terminal's name; typing in Kane while another terminal finishes no longer loses focus; clicking off a menu tile sticks for ~30 s; Alt+←/→ still flows; Alt+K opens/focuses Kane; 🜲+ docks a second Kane with its own session and its × removes it; dragging Kane's left edge resizes the panel and the width survives a restart.
