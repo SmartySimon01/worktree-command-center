@@ -17,9 +17,21 @@ describe('parseOutboxMessage', () => {
   });
   it('parses a spawn with and without a base', () => {
     expect(parseOutboxMessage('{"kind":"spawn","repo":"app","base":"main","task":"do X"}'))
-      .toEqual({ kind: 'spawn', repo: 'app', base: 'main', task: 'do X' });
+      .toEqual({ kind: 'spawn', repo: 'app', base: 'main', task: 'do X', model: null, effort: null, name: null });
     expect(parseOutboxMessage('{"kind":"spawn","repo":"app","task":"do X"}'))
-      .toEqual({ kind: 'spawn', repo: 'app', base: null, task: 'do X' });
+      .toEqual({ kind: 'spawn', repo: 'app', base: null, task: 'do X', model: null, effort: null, name: null });
+  });
+  it('parses spawn model/effort/name, lowercasing effort and nulling junk', () => {
+    expect(parseOutboxMessage('{"kind":"spawn","repo":"app","task":"x","model":"opus","effort":"MAX","name":"Linehaul"}'))
+      .toEqual({ kind: 'spawn', repo: 'app', base: null, task: 'x', model: 'opus', effort: 'max', name: 'Linehaul' });
+    expect(parseOutboxMessage('{"kind":"spawn","repo":"app","task":"x","model":"  ","effort":42,"name":" "}'))
+      .toEqual({ kind: 'spawn', repo: 'app', base: null, task: 'x', model: null, effort: null, name: null });
+  });
+  it('parses a rename and rejects blank fields', () => {
+    expect(parseOutboxMessage('{"kind":"rename","target":"wt-1","name":"Linehaul fix"}'))
+      .toEqual({ kind: 'rename', target: 'wt-1', name: 'Linehaul fix' });
+    expect(parseOutboxMessage('{"kind":"rename","target":"wt-1","name":"  "}')).toBeNull();
+    expect(parseOutboxMessage('{"kind":"rename","target":"","name":"x"}')).toBeNull();
   });
   it('parses a personality toggle (no fields)', () => {
     expect(parseOutboxMessage('{"kind":"personality"}')).toEqual({ kind: 'personality' });
@@ -90,9 +102,13 @@ describe('godSystemPrompt', () => {
     expect(p).toContain('cos-coord tell');
     expect(p).toContain('/repos/app');
   });
-  it('documents the watch and spawn commands', () => {
+  it('documents the watch, spawn, and rename commands', () => {
     expect(p).toContain('cos-coord watch');
     expect(p).toContain('cos-coord spawn');
+    expect(p).toContain('--model');
+    expect(p).toContain('--effort low|medium|high|xhigh|max|ultracode');
+    expect(p).toContain('--name');
+    expect(p).toContain('cos-coord rename');
   });
 });
 

@@ -383,7 +383,7 @@ export class TerminalsGrid {
 
 	/** Shared spawn core: create a worktree + tile, render, persist, layout. Optionally queue an
 	 *  initial task to send once the new session is first ready. Returns the tile (or null). */
-	private async spawnWorktree(repo: RepoConfig, base: string, opts: { task?: string; model?: string; effort?: string }): Promise<TerminalTile | null> {
+	private async spawnWorktree(repo: RepoConfig, base: string, opts: { task?: string; model?: string; effort?: string; name?: string }): Promise<TerminalTile | null> {
 		try {
 			const branches = await listBranches(repo.path);
 			const branch = this.pendingNewBranch ?? nextWorktreeBranch(branches, base);
@@ -392,7 +392,7 @@ export class TerminalsGrid {
 			// Explicit opts win; otherwise inherit the toolbar dropdowns ('' = CLI default = no flag).
 			const model = opts.model ?? (this.modelSel?.value || undefined);
 			const effort = opts.effort ?? (this.effortSel?.value || undefined);
-			const tile = this.makeTile(worktree, repo.name, repo.path, base, false, undefined, model, effort);
+			const tile = this.makeTile(worktree, repo.name, repo.path, base, false, opts.name, model, effort);
 			if (opts.task) this.pendingTask.set(tile.tileId, opts.task);
 			if (this.stageEl) tile.render(this.stageEl);
 			this.tiles.push(tile);
@@ -405,12 +405,16 @@ export class TerminalsGrid {
 		}
 	}
 
-	/** Kane asked to spawn a terminal: resolve the repo by name, default the base branch, start
-	 *  it on the given task. */
-	private async spawnFromKane(repoName: string, base: string | null, task: string): Promise<void> {
+	/** Kane asked to spawn a terminal: resolve the repo by name, validate the effort, default the
+	 *  base branch, start it on the given task. Invalid effort → error note, no spawn. */
+	private async spawnFromKane(repoName: string, base: string | null, task: string, model: string | null = null, effort: string | null = null, name: string | null = null): Promise<void> {
 		const known = this.repos.some((r) => r.name === repoName || r.name.toLowerCase() === repoName.toLowerCase());
 		if (!known) { this.writeGodInbox(`cannot spawn — unknown repo "${repoName}". Known: ${this.repos.map((r) => r.name).join(', ') || '(none)'}`); return; }
-		await this.spawnFromName(repoName, base, task);
+		if (effort !== null && !(EFFORT_LEVELS as readonly string[]).includes(effort)) {
+			this.writeGodInbox(`cannot spawn — invalid --effort "${effort}". Valid: ${EFFORT_LEVELS.join(', ')}`);
+			return;
+		}
+		await this.spawnFromName(repoName, base, task, model ?? undefined, effort ?? undefined, name ?? undefined);
 	}
 
 	/** Spawn a new journal tile, center it, and persist. */
@@ -583,13 +587,15 @@ export class TerminalsGrid {
 		if (t && !t.isJournal) (t as TerminalTile).toggleRemoteControl();
 	}
 
-	/** Spawn a worktree terminal for a repo by name, on a base, with a kickoff task. */
-	async spawnFromName(repoName: string, base: string | null, task: string): Promise<TerminalTile | null> {
+	/** Spawn a worktree terminal for a repo by name, on a base, with a kickoff task. Model/effort
+	 *  override the toolbar dropdowns when given (spawnWorktree applies the fallback); name
+	 *  overrides the default branch-derived terminal name. */
+	async spawnFromName(repoName: string, base: string | null, task: string, model?: string, effort?: string, name?: string): Promise<TerminalTile | null> {
 		const repo = this.repos.find((r) => r.name === repoName)
 			?? this.repos.find((r) => r.name.toLowerCase() === repoName.toLowerCase());
 		if (!repo) return null;
 		const baseBranch = base ?? (defaultBranch(await listBranches(repo.path)) ?? 'main');
-		return this.spawnWorktree(repo, baseBranch, { task });
+		return this.spawnWorktree(repo, baseBranch, { task, model, effort, name });
 	}
 
 	/** Toggle the GOD console: spawn on first open, then just show/hide (session persists). */
@@ -716,8 +722,13 @@ export class TerminalsGrid {
 			else this.writeGodInbox(`cannot watch "${msg.target}" — not a live terminal. Live: ${liveNames.join(', ') || '(none)'}`);
 		} else if (msg.kind === 'personality') {
 			this.togglePersonality();
+		} else if (msg.kind === 'rename') {
+			const name = resolveTellTarget(msg.target, liveNames);
+			const tile = name ? this.allSessions().find((t) => t.name === name) : undefined;
+			if (tile && !tile.isJournal) (tile as TerminalTile).setName(msg.name);
+			else this.writeGodInbox(`cannot rename "${msg.target}" — not a live terminal. Live: ${liveNames.join(', ') || '(none)'}`);
 		} else {
-			void this.spawnFromKane(msg.repo, msg.base, msg.task);
+			void this.spawnFromKane(msg.repo, msg.base, msg.task, msg.model, msg.effort, msg.name);
 		}
 	}
 

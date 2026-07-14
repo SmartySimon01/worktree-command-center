@@ -105,7 +105,8 @@ function dropOutbox(dir, obj) {
 }
 function tell(dir, target, message) { return dropOutbox(dir, { kind: 'tell', target, message }); }
 function watch(dir, target, note) { return dropOutbox(dir, { kind: 'watch', target, note }); }
-function spawn(dir, repo, base, task) { return dropOutbox(dir, { kind: 'spawn', repo, base: base || null, task }); }
+function spawn(dir, repo, base, task, model, effort, name) { return dropOutbox(dir, { kind: 'spawn', repo, base: base || null, task, model: model || null, effort: effort || null, name: name || null }); }
+function rename(dir, target, to) { return dropOutbox(dir, { kind: 'rename', target, name: to }); }
 function personality(dir) { return dropOutbox(dir, { kind: 'personality' }); }
 
-module.exports = { acquire, release, readLocks, readHolder, appendBoard, note, appendChat, tell, watch, spawn, personality, dropOutbox, sleepSync };
+module.exports = { acquire, release, readLocks, readHolder, appendBoard, note, appendChat, tell, watch, spawn, rename, personality, dropOutbox, sleepSync };

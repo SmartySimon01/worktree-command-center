@@ -13,13 +13,14 @@ export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max', 'ultracod
 export type OutboxMessage =
 	| { kind: 'tell'; target: string; message: string }
 	| { kind: 'watch'; target: string; note: string }
-	| { kind: 'spawn'; repo: string; base: string | null; task: string }
+	| { kind: 'spawn'; repo: string; base: string | null; task: string; model: string | null; effort: string | null; name: string | null }
+	| { kind: 'rename'; target: string; name: string }
 	| { kind: 'personality' };
 
 /** Parse one god-outbox JSON message into a typed command. An untagged {target,message} is
  *  read as a tell (back-compat). Returns null on malformed / missing fields. */
 export function parseOutboxMessage(text: string): OutboxMessage | null {
-	let o: { kind?: unknown; target?: unknown; message?: unknown; note?: unknown; repo?: unknown; base?: unknown; task?: unknown };
+	let o: { kind?: unknown; target?: unknown; message?: unknown; note?: unknown; repo?: unknown; base?: unknown; task?: unknown; model?: unknown; effort?: unknown; name?: unknown };
 	try { o = JSON.parse(text); } catch { return null; }
 	if (!o || typeof o !== 'object') return null;
 	const kind = typeof o.kind === 'string' ? o.kind : 'tell';
@@ -36,7 +37,14 @@ export function parseOutboxMessage(text: string): OutboxMessage | null {
 	} else if (kind === 'spawn') {
 		if (typeof o.repo === 'string' && typeof o.task === 'string' && o.repo.trim() && o.task) {
 			const base = typeof o.base === 'string' && o.base.trim() ? o.base : null;
-			return { kind: 'spawn', repo: o.repo, base, task: o.task };
+			const model = typeof o.model === 'string' && o.model.trim() ? o.model.trim() : null;
+			const effort = typeof o.effort === 'string' && o.effort.trim() ? o.effort.trim().toLowerCase() : null;
+			const name = typeof o.name === 'string' && o.name.trim() ? o.name.trim() : null;
+			return { kind: 'spawn', repo: o.repo, base, task: o.task, model, effort, name };
+		}
+	} else if (kind === 'rename') {
+		if (typeof o.target === 'string' && typeof o.name === 'string' && o.target.trim() && o.name.trim()) {
+			return { kind: 'rename', target: o.target, name: o.name.trim() };
 		}
 	}
 	return null;
@@ -111,8 +119,11 @@ export function godSystemPrompt(repos: GodRepo[], coordDir: string): string {
 		'    cos-coord watch "<exact terminal name>" --note "<what you will do when it finishes>"',
 		'    You get a [watch] line here when it goes idle (not while it is just paused on a prompt); then do the thing.',
 		'  - To open a NEW worktree terminal and start it on a task, run:',
-		'    cos-coord spawn "<repo>" --base "<branch>" --task "<first instruction>"',
-		'    --base is optional (defaults to the repo\'s main). Repo names + paths are listed below.',
+		'    cos-coord spawn "<repo>" --base "<branch>" --task "<first instruction>" [--model <alias-or-id>] [--effort low|medium|high|xhigh|max|ultracode] [--name "<terminal name>"]',
+		'    --base is optional (defaults to the repo\'s main). --model takes an alias (opus, sonnet, haiku,',
+		'    fable) or a full model id. Flags you omit inherit the user\'s toolbar dropdowns. Repo names +',
+		'    paths are listed below.',
+		'  - To rename a worker terminal, run:  cos-coord rename "<exact terminal name>" --to "<new name>"',
 		'  - To change code in a repo, cd into its path below. Do NOT edit a repo\'s primary checkout',
 		'    directly — create a git worktree for your change, the same rule the worker terminals follow.',
 		'  - Destructive actions will prompt you for permission right here in this console; that is expected.',

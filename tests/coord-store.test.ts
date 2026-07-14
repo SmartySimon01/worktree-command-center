@@ -70,4 +70,15 @@ describe('coord-store', () => {
     expect(msgs.find((m) => m.kind === 'watch')).toMatchObject({ target: 'Improver 1', note: 'run tests after' });
     expect(msgs.find((m) => m.kind === 'spawn')).toMatchObject({ repo: 'app', base: 'main', task: 'do X' });
   });
+
+  it('spawn records model/effort/name (null when omitted); rename drops a tagged file', () => {
+    store.spawn(dir, 'app', '', 'do X');
+    store.spawn(dir, 'app', 'main', 'do Y', 'opus', 'max', 'Linehaul');
+    store.rename(dir, 'wt-1', 'Linehaul fix');
+    const msgs = fs.readdirSync(path.join(dir, 'god-outbox')).filter((f) => f.endsWith('.json'))
+      .map((f) => JSON.parse(fs.readFileSync(path.join(dir, 'god-outbox', f), 'utf8')));
+    expect(msgs.find((m) => m.task === 'do X')).toMatchObject({ model: null, effort: null, name: null });
+    expect(msgs.find((m) => m.task === 'do Y')).toMatchObject({ model: 'opus', effort: 'max', name: 'Linehaul' });
+    expect(msgs.find((m) => m.kind === 'rename')).toMatchObject({ target: 'wt-1', name: 'Linehaul fix' });
+  });
 });
