@@ -46,6 +46,29 @@ export class GodConsole {
 		// typing to Kane (mirrors terminal-tile's focusin/focusout wiring).
 		this.el.addEventListener('focusin', () => this.opts.onFocusChange?.(true));
 		this.el.addEventListener('focusout', () => this.opts.onFocusChange?.(false));
+		// Left-edge grip: drag to resize the panel width. One shared width for every Kane
+		// panel, persisted across sessions; the body's ResizeObserver refits xterm live.
+		const saved = Number(window.localStorage.getItem('cos-god-width'));
+		if (Number.isFinite(saved) && saved >= 280) this.el.style.flex = `0 0 ${Math.round(saved)}px`;
+		const grip = this.el.createDiv({ cls: 'cos-god-resize' });
+		grip.addEventListener('mousedown', (e) => {
+			e.preventDefault();
+			const startX = e.clientX;
+			const startW = this.el!.getBoundingClientRect().width;
+			grip.classList.add('dragging');
+			const move = (ev: MouseEvent): void => {
+				const w = Math.min(Math.max(280, startW + (startX - ev.clientX)), Math.round(window.innerWidth * 0.7));
+				this.el!.style.flex = `0 0 ${Math.round(w)}px`;
+			};
+			const up = (): void => {
+				grip.classList.remove('dragging');
+				document.removeEventListener('mousemove', move);
+				document.removeEventListener('mouseup', up);
+				window.localStorage.setItem('cos-god-width', String(Math.round(this.el!.getBoundingClientRect().width)));
+			};
+			document.addEventListener('mousemove', move);
+			document.addEventListener('mouseup', up);
+		});
 		const head = this.el.createDiv({ cls: 'cos-god-head' });
 		head.createSpan({ text: `🜲 ${this.opts.instanceName ?? 'Kane'}` });
 		const refreshBtn = head.createEl('button', { text: '⟳', cls: 'cos-term-refresh', attr: { title: 'Refresh Kane — reload with --continue (keeps the conversation)' } });
