@@ -24,9 +24,21 @@ npm install
 npm start          # build + launch
 npm test           # unit tests
 npm run dist       # build a Windows installer (release/)
+npm run install-local   # install/refresh it as a Windows app (see below)
 ```
 
 Requires Node 18+ and Git on PATH. Claude Code (`claude`) must be installed and on PATH.
+
+### Install as an app
+
+`npm run install-local` builds the app, packages a Windows installer, and silently
+(re)installs it per-user — Start Menu entry included, without ever opening the app
+(launch it from the Start Menu when you want it). Rerun it any time to refresh the
+installed copy with your latest code. If a `private/` overlay is present it is
+compiled in; those installers go to the gitignored `release-private/` (separate from
+public `release/` artifacts) and are meant to stay on your machine.
+
+The installed app still resolves `node.exe`, `git`, and `claude` from PATH at runtime.
 
 ### Troubleshooting
 
