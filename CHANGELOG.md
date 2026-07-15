@@ -2,17 +2,36 @@
 
 All notable changes to Worktree Command Center. Dates are when the work landed on `main`.
 
-## Unreleased
+## 2026-07-14
 
-- Fixed a packaging failure: `codesign` intermittently threw "internal error in Code Signing
-  subsystem" while signing `node-pty`'s build artifacts — specifically a symlink
-  (`node_modules/node-pty/build/node_gyp_bins/python3`) pointing outside the app bundle to a
-  system Command Line Tools binary. That directory is dev-only `node-gyp` build output, never
-  needed at runtime (the app uses the prebuilt native binary in `prebuilds/`) — now excluded from
-  what gets bundled via an `extraResources` filter.
-- Added this changelog, viewable in-app via the 📋 Changelog button.
+**Synced with the upstream project** — merged ~36 commits from the original repo, reconciling both
+forks' overlapping work. Notable additions now available:
+- **Model & effort per terminal** — pick the model and reasoning effort for new terminals from the
+  toolbar; the overseer can spawn terminals with `--model`/`--effort`/`--name`.
+- **Overseer upgrades** — duplicate overseer consoles (each its own session), drag-to-resize the
+  panel, `Alt+K` to open it, a rename verb, and focus-hold discipline while you type.
+- **Fable weekly** readout on the usage battery; a fresh probe session per refresh so the numbers
+  actually update.
+- **Session-env provider** threaded into every spawn (the groundwork for upcoming per-workspace
+  SSH and role features), plus `npm run install-local` and a private-overlay hook.
+
+**Overseer name is configurable**
+- Set the overseer console's name in ⚙ Settings (default "Kane"). Applies immediately — the 🜲
+  button and console header update on Save, no restart needed. (This replaced an earlier
+  fork-only rename of the persona to "Able.")
+
+**Packaging**
+- The macOS codesign failure ("internal error in Code Signing subsystem" on `node-pty`'s dev
+  build artifacts) is now root-fixed by skipping the native-module rebuild during packaging
+  (`npmRebuild: false`), so the offending `node-gyp` output — including a symlink pointing outside
+  the app bundle — is never created; a defensive bundle filter is kept as a backstop.
+- Fixed the in-app 📋 Changelog showing empty in the packaged app: `CHANGELOG.md` wasn't in the
+  build's file allowlist, so it never shipped. Now bundled.
 
 ## 2026-07-09
+
+_(The in-app 📋 Changelog button was added here; the persona rename to "Able" noted below was
+later reverted to the now-configurable "Kane" — see 2026-07-14.)_
 
 **macOS support** (this was originally a Windows-only app)
 - Packaging: mac `electron-builder` target (dmg + zip, x64 + arm64), fixed a build-output

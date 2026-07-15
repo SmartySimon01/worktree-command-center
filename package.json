@@ -40,7 +40,8 @@
       "index.html",
       "app.css",
       "styles.css",
-      "assets/**"
+      "assets/**",
+      "CHANGELOG.md"
     ],
     "extraResources": [
       {
