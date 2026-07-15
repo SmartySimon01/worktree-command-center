@@ -143,7 +143,7 @@ export class TerminalsGrid {
 	private scanDebounce: number | null = null;
 	private stageResizeObs: ResizeObserver | null = null;
 	private layoutRaf: number | null = null;
-	private readonly overseerName: string;
+	private overseerName: string;
 
 	constructor(private deps: GridDeps) {
 		this.overseerName = (deps.overseerName && deps.overseerName.trim()) || 'Kane';
@@ -403,6 +403,16 @@ export class TerminalsGrid {
 		for (const r of this.repos) this.repoSel.createEl('option', { text: r.name, value: r.name });
 		if (this.repos.some((r) => r.name === cur)) this.repoSel.value = cur;
 		void this.refreshBranches();
+	}
+
+	/** Live-rename the overseer (Settings → Overseer console name). Updates the 🜲 button + the
+	 *  primary console header instantly; the running session's self-identity refreshes on its next
+	 *  start/refresh. Duplicate consoles keep their existing "<oldname> N" label until re-created. */
+	setOverseerName(name: string): void {
+		this.overseerName = (name && name.trim()) || 'Kane';
+		this.godBtn?.setText(`🜲 ${this.overseerName}`);
+		this.godBtn?.setAttribute('title', `Open the ${this.overseerName} overseer console — sees the whole floor, acts on request (Alt+K)`);
+		this.godConsole?.setDisplayName(this.overseerName);
 	}
 
 	private selectedRepo(): RepoConfig | undefined {

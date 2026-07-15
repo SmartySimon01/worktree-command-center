@@ -26,6 +26,7 @@ export interface GodConsoleOpts {
  *  instant. No worktree, no branch, no delete-on-close. */
 export class GodConsole {
 	private el: HTMLElement | null = null;
+	private nameSpan: HTMLElement | null = null;
 	private bodyEl: HTMLElement | null = null;
 	private term: Terminal | null = null;
 	private fit: FitAddon | null = null;
@@ -75,7 +76,7 @@ export class GodConsole {
 			grip.addEventListener('pointercancel', up);
 		});
 		const head = this.el.createDiv({ cls: 'cos-god-head' });
-		head.createSpan({ text: `🜲 ${this.opts.instanceName ?? 'Kane'}` });
+		this.nameSpan = head.createSpan({ text: `🜲 ${this.opts.instanceName ?? 'Kane'}` });
 		const refreshBtn = head.createEl('button', { text: '⟳', cls: 'cos-term-refresh', attr: { title: 'Refresh Kane — reload with --continue (keeps the conversation)' } });
 		refreshBtn.addEventListener('click', (e) => { e.stopPropagation(); void this.refresh(); });
 		const hide = head.createEl('button', { text: '×', attr: { title: 'Hide Kane (session keeps running)' } });
@@ -225,6 +226,14 @@ export class GodConsole {
 
 	focus(): void { this.term?.focus(); }
 	blur(): void { this.term?.blur(); }
+
+	/** Live-rename the console: update the header label + the name used for future system-prompt /
+	 *  settings writes. The RUNNING session's self-identity (already-spawned claude) only changes on
+	 *  its next start/refresh — but the visible label updates instantly. */
+	setDisplayName(name: string): void {
+		this.opts.instanceName = name;
+		this.nameSpan?.setText(`🜲 ${name}`);
+	}
 
 	/** Last ≤20 non-blank lines of Kane's buffer — for the phone floor view. */
 	recentOutput(): string {

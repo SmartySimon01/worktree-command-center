@@ -7,6 +7,8 @@ export interface SettingsPanelDeps {
 	getConfig: () => Promise<{ convertDestinations?: ConvertDestination[]; [k: string]: unknown }>;
 	setConfig: (c: Record<string, unknown>) => Promise<boolean>;
 	toast: (msg: string) => void;
+	/** Apply a changed overseer name live (updates the button + open console immediately). */
+	onOverseerNameChange?: (name: string) => void;
 }
 
 /** Toggleable panel (same open/close pattern as the phone-floor panel): configure the "Convert
@@ -65,7 +67,8 @@ export class SettingsPanel {
 				const cfg = await this.deps.getConfig();
 				const val = nameInput.value.trim();
 				await this.deps.setConfig({ ...cfg, overseerName: val || undefined });
-				this.deps.toast(val ? `Overseer name set to "${val}" — restart the app to apply` : 'Overseer name reset to Kane — restart to apply');
+				this.deps.onOverseerNameChange?.(val || 'Kane');
+				this.deps.toast(val ? `Overseer renamed to "${val}"` : 'Overseer name reset to Kane');
 			})();
 		});
 

@@ -120,6 +120,7 @@ async function main(): Promise<void> {
 			getConfig: () => window.wcc.getConfig(),
 			setConfig: (c) => window.wcc.setConfig(c),
 			toast,
+			onOverseerNameChange: (name) => grids.forEach((g) => g.setOverseerName(name)),
 		});
 		settingsBtn.addEventListener('click', () => { void settingsPanel.toggle(appEl); });
 
