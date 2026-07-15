@@ -76,6 +76,18 @@ function createWindow(): void {
 		return r.canceled ? null : r.filePaths[0];
 	});
 
+	// IPC: pick where to create a NEW repo — `createDirectory` enables the native "New Folder"
+	// button so you can make a fresh folder right in the picker (the New repo flow then git-inits
+	// a named subfolder inside whatever you choose).
+	ipcMain.handle('newRepoLocation', async () => {
+		const r = await dialog.showOpenDialog(win!, {
+			title: 'Choose where to create the new repository (New Folder to make one here)',
+			buttonLabel: 'Use this location',
+			properties: ['openDirectory', 'createDirectory'],
+		});
+		return r.canceled ? null : r.filePaths[0];
+	});
+
 	// Phone floor view: HTTP server (Tailscale-reachable) + the access info for the topbar panel.
 	const { token } = startRemoteServer({ port: REMOTE_PORT, getWindow: () => win });
 	ipcMain.handle('remote:info', () => ({

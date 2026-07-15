@@ -23,6 +23,7 @@ declare global {
 			getConfig(): Promise<any>;
 			setConfig(c: any): Promise<boolean>;
 			addFolder(): Promise<string | null>;
+			newRepoLocation(): Promise<string | null>;
 			pushFloorState(s: unknown): void;
 			onRemoteAction(cb: (a: { type: string; id?: number; repo?: string; base?: string | null; task?: string }) => void): void;
 			remoteInfo(): Promise<{ token: string; port: number; urls: string[] }>;
@@ -255,7 +256,7 @@ async function main(): Promise<void> {
 		// worktrees have a base branch), then add it to the workspace like any other repo.
 		newRepoBtn.addEventListener('click', () => {
 			void (async () => {
-				const parent = await window.wcc.addFolder(); // choose WHERE to create it
+				const parent = await window.wcc.newRepoLocation(); // choose WHERE (New Folder button available)
 				if (!parent) return;
 				const name = await promptForTopic('New git repository', 'Name for the new repo', '', 'Create');
 				if (!name || !name.trim()) return;
