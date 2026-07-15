@@ -7,3 +7,6 @@ pty-sidecar/contexts/
 .DS_Store
 .superpowers/
 /private/
+
+# self-review skill local checkpoint
+.self-review-state.json
