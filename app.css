@@ -217,6 +217,8 @@ html, body {
 .wcc-changelog-empty { color: var(--text-muted); font-size: 12px; }
 .wcc-changelog-section { font-weight: 600; color: var(--color-cyan); margin: 10px 0 4px; }
 .wcc-changelog-section:first-child { margin-top: 0; }
+.wcc-changelog-version { font-weight: 700; font-size: 13.5px; color: var(--text-normal); margin: 16px 0 6px; padding-top: 12px; border-top: 1px solid var(--background-modifier-border); }
+.wcc-changelog-version:first-child { margin-top: 0; padding-top: 0; border-top: none; }
 .wcc-changelog-bullet { color: var(--text-normal); padding-left: 14px; position: relative; margin-bottom: 3px; }
 .wcc-changelog-bullet::before { content: '\2013'; position: absolute; left: 0; color: var(--text-muted); }
 .wcc-changelog-text { color: var(--text-muted); margin-bottom: 3px; }

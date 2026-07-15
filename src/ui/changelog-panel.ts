@@ -35,7 +35,10 @@ export class ChangelogPanel {
 		} else {
 			for (const raw of text.split('\n')) {
 				const line = raw.trimEnd();
-				if (line.startsWith('## ')) body.createDiv({ cls: 'wcc-changelog-section', text: line.slice(3) });
+				// A "## " heading that starts with a version number (e.g. "0.1.0 — 2026-07-14") is a
+				// version divider — render it with a rule; other "## " headings are plain sections.
+				if (line.startsWith('## ') && /^\d+\.\d+\.\d+/.test(line.slice(3))) body.createDiv({ cls: 'wcc-changelog-version', text: line.slice(3) });
+				else if (line.startsWith('## ')) body.createDiv({ cls: 'wcc-changelog-section', text: line.slice(3) });
 				else if (line.startsWith('# ')) continue; // top-level "# Changelog" title — redundant with the header above
 				else if (/^[-*]\s+/.test(line)) body.createDiv({ cls: 'wcc-changelog-bullet', text: line.replace(/^[-*]\s+/, '') });
 				else if (line.trim() === '') body.createDiv({ cls: 'wcc-changelog-gap' });

@@ -1,8 +1,9 @@
 # Changelog
 
-All notable changes to Worktree Command Center. Dates are when the work landed on `main`.
+All notable changes to Worktree Command Center. Grouped by version; dates are when the work
+landed on `main`.
 
-## 2026-07-14
+## 0.1.0 — 2026-07-14
 
 **Synced with the upstream project** — merged ~36 commits from the original repo, reconciling both
 forks' overlapping work. Notable additions now available:
@@ -28,10 +29,10 @@ forks' overlapping work. Notable additions now available:
 - Fixed the in-app 📋 Changelog showing empty in the packaged app: `CHANGELOG.md` wasn't in the
   build's file allowlist, so it never shipped. Now bundled.
 
-## 2026-07-09
+## 0.0.0 — 2026-07-09 (pre-versioning)
 
 _(The in-app 📋 Changelog button was added here; the persona rename to "Able" noted below was
-later reverted to the now-configurable "Kane" — see 2026-07-14.)_
+later reverted to the now-configurable "Kane" — see 0.1.0.)_
 
 **macOS support** (this was originally a Windows-only app)
 - Packaging: mac `electron-builder` target (dmg + zip, x64 + arm64), fixed a build-output

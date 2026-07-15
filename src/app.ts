@@ -3,6 +3,7 @@ import { toast } from './ui/toast';
 import { promptForTopic } from './ui/prompt-dialog';
 import { TerminalsGrid, type GridDeps, type RepoConfig } from './terminals/terminals-grid';
 import { discoverRepos, mergeRepos } from './workspace';
+import { createGitRepo } from './create-repo';
 import { UsageProbe } from './terminals/usage-probe';
 import { UsageWidget } from './ui/usage-widget';
 import { AttentionWidget } from './ui/attention-widget';
@@ -45,6 +46,7 @@ async function main(): Promise<void> {
 		const topBar = appEl.createDiv({ cls: 'wcc-topbar' });
 		topBar.createSpan({ cls: 'wcc-brand', text: '🌳 Worktree Command Center' });
 		const addFolderBtn = topBar.createEl('button', { cls: 'wcc-add', text: '➕ Add folder' });
+		const newRepoBtn = topBar.createEl('button', { cls: 'wcc-add', text: '🆕 New repo' });
 		const statusSpan = topBar.createSpan({ cls: 'wcc-status', text: `${repos.length} repos` });
 
 		// --- workspaces ---
@@ -246,6 +248,26 @@ async function main(): Promise<void> {
 				persist();
 				statusSpan.textContent = `${repos.length} repos · ${found.length} just added`;
 				toast(`Added ${found.length} repo(s)`);
+			})();
+		});
+
+		// 🆕 New repo: pick a location, name it, `git init` a fresh repo (README + initial commit so
+		// worktrees have a base branch), then add it to the workspace like any other repo.
+		newRepoBtn.addEventListener('click', () => {
+			void (async () => {
+				const parent = await window.wcc.addFolder(); // choose WHERE to create it
+				if (!parent) return;
+				const name = await promptForTopic('New git repository', 'Name for the new repo', '', 'Create');
+				if (!name || !name.trim()) return;
+				const res = await createGitRepo(parent, name);
+				if (!res.ok) { toast(`Couldn't create repo: ${res.error}`); return; }
+				repos = mergeRepos(repos, discoverRepos(res.path!));
+				grids.forEach((g) => g.setRepos(repos));
+				persist();
+				statusSpan.textContent = `${repos.length} repos · created ${name.trim()}`;
+				toast(res.committed
+					? `Created "${name.trim()}"`
+					: `Created "${name.trim()}" — set your git user.name/email and make a commit to use worktrees`);
 			})();
 		});
 	} catch (e) {
