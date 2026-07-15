@@ -309,7 +309,7 @@ export class GodConsole {
 			fs.mkdirSync(cmdDir, { recursive: true });
 			fs.writeFileSync(path.join(cmdDir, 'personality.md'), [
 				'---',
-				'description: Toggle Kane\'s personality (forge-master persona + periodic floor pulses) on/off',
+				`description: Toggle ${this.opts.instanceName ?? 'Kane'}'s personality (forge-master persona + periodic floor pulses) on/off`,
 				'---',
 				'Run exactly this command and nothing else, then confirm in one short line:',
 				'',
@@ -338,7 +338,7 @@ export class GodConsole {
 		try {
 			fs.mkdirSync(this.opts.godHomeDir, { recursive: true });
 			const file = path.join(this.opts.godHomeDir, 'god-system-prompt.md');
-			fs.writeFileSync(file, godSystemPrompt(this.opts.repos, this.opts.coordDir), 'utf8');
+			fs.writeFileSync(file, godSystemPrompt(this.opts.repos, this.opts.coordDir, this.opts.instanceName ?? 'Kane'), 'utf8');
 			return file;
 		} catch { return null; }
 	}

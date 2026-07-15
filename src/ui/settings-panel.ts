@@ -51,6 +51,24 @@ export class SettingsPanel {
 		this.el.empty();
 		this.el.createDiv({ cls: 'wcc-settings-h', text: '⚙ Settings' });
 
+		// --- Overseer name ---
+		const nameSection = this.el.createDiv({ cls: 'wcc-settings-section' });
+		nameSection.createDiv({ cls: 'wcc-settings-sub', text: 'Overseer console name — what the 🜲 button and the overseer call themselves' });
+		const cfg0 = await this.deps.getConfig();
+		const nameRow = nameSection.createDiv({ cls: 'wcc-settings-row' });
+		const nameInput = nameRow.createEl('input', { cls: 'wcc-settings-input', attr: { type: 'text', placeholder: 'Kane' } }) as HTMLInputElement;
+		nameInput.value = typeof cfg0.overseerName === 'string' ? cfg0.overseerName : '';
+		const saveName = nameRow.createEl('button', { cls: 'wcc-settings-remove', text: 'Save' });
+		saveName.addEventListener('click', (e) => {
+			e.stopPropagation();
+			void (async () => {
+				const cfg = await this.deps.getConfig();
+				const val = nameInput.value.trim();
+				await this.deps.setConfig({ ...cfg, overseerName: val || undefined });
+				this.deps.toast(val ? `Overseer name set to "${val}" — restart the app to apply` : 'Overseer name reset to Kane — restart to apply');
+			})();
+		});
+
 		const section = this.el.createDiv({ cls: 'wcc-settings-section' });
 		section.createDiv({ cls: 'wcc-settings-sub', text: 'Convert destinations — where a journal note\'s "Convert to…" can send it' });
 

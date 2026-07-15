@@ -41,6 +41,7 @@ export interface GridDeps {
 	group: string;
 	bypassPermissions: boolean;
 	sessionEnv?: () => Record<string, string>;
+	overseerName?: string;   // configurable name of the overseer console (default 'Kane')
 	toast: (msg: string) => void;
 	promptForTopic: (title: string, placeholder: string, initial?: string, okLabel?: string) => Promise<string | null>;
 	openSettings: () => void;
@@ -66,8 +67,8 @@ const SPAWN_EFFORTS: { label: string; value: string }[] = [
 const MANUAL_HOLD_MS = 30_000;
 
 // --- Kane personality mode (toggled by his /personality command) ---
-const KANE_PERSONA_ON =
-	'[personality: ON] Speak as Kane the forge-master from now on — terse, gruff, dry, in command ' +
+const kanePersonaOn = (name: string): string =>
+	`[personality: ON] Speak as ${name} the forge-master from now on — terse, gruff, dry, in command ` +
 	'of the floor; the worker terminals are your smiths and their branches are iron on the anvil. ' +
 	'Drop the odd forge/river turn of phrase, never flowery. Keep doing your job exactly as before ' +
 	'(same tools, same restraint — you still do not run the floor unprompted), just in that voice. ' +
@@ -142,8 +143,10 @@ export class TerminalsGrid {
 	private scanDebounce: number | null = null;
 	private stageResizeObs: ResizeObserver | null = null;
 	private layoutRaf: number | null = null;
+	private readonly overseerName: string;
 
 	constructor(private deps: GridDeps) {
+		this.overseerName = (deps.overseerName && deps.overseerName.trim()) || 'Kane';
 		this.sidecarPath = deps.sidecarPath;
 		this.notifyScriptPath = deps.notifyScriptPath;
 		this.sessionsFile = deps.sessionsFile;
@@ -222,12 +225,12 @@ export class TerminalsGrid {
 		// this.selectBtn = controls.createEl('button', { text: '⊕ Select' });
 		// this.selectBtn.addEventListener('click', () => this.setSelecting(!this.selecting));
 
-		this.godBtn = controls.createEl('button', { text: '🜲 Kane', cls: 'cos-god-btn' });
-		this.godBtn.setAttribute('title', 'Open the Kane overseer console — sees the whole floor, acts on request (Alt+K)');
+		this.godBtn = controls.createEl('button', { text: `🜲 ${this.overseerName}`, cls: 'cos-god-btn' });
+		this.godBtn.setAttribute('title', `Open the ${this.overseerName} overseer console — sees the whole floor, acts on request (Alt+K)`);
 		this.godBtn.addEventListener('click', () => this.toggleGod());
 
 		const kaneDupBtn = controls.createEl('button', { text: '🜲+', cls: 'cos-god-btn' });
-		kaneDupBtn.setAttribute('title', 'Add another Kane console — a separate session in its own panel (close it with its ×)');
+		kaneDupBtn.setAttribute('title', `Add another ${this.overseerName} console — a separate session in its own panel (close it with its ×)`);
 		kaneDupBtn.addEventListener('click', () => this.addKane());
 
 		const viewCode = controls.createEl('button', { text: '🧩 View Code' });
@@ -713,7 +716,7 @@ export class TerminalsGrid {
 		if (this.godConsole) {
 			const ko = this.godConsole.recentOutput();
 			out.unshift({
-				id: -1, name: 'Kane', repo: '—', branch: '—',
+				id: -1, name: this.overseerName, repo: '—', branch: '—',
 				state: looksLikePrompt(ko) ? 'prompt' : looksLikeMenu(ko) ? 'menu' : 'running',
 				output: ko.split('\n').slice(-12).join('\n'), remoteOn: false,
 			});
@@ -745,7 +748,7 @@ export class TerminalsGrid {
 		if (!this.godConsole) {
 			const godHomeDir = path.join(this.coordDir, '..', '.god', this.deps.group);
 			const kane: GodConsole = new GodConsole(
-				{ repos: this.repos.map((r) => ({ name: r.name, path: r.path })), coordDir: this.coordDir, sidecarPath: this.sidecarPath, godHomeDir, sessionEnv: this.deps.sessionEnv, onFocusChange: (f) => { this.focusedKane = f ? kane : (this.focusedKane === kane ? null : this.focusedKane); } },
+				{ repos: this.repos.map((r) => ({ name: r.name, path: r.path })), coordDir: this.coordDir, sidecarPath: this.sidecarPath, godHomeDir, sessionEnv: this.deps.sessionEnv, instanceName: this.overseerName, onFocusChange: (f) => { this.focusedKane = f ? kane : (this.focusedKane === kane ? null : this.focusedKane); } },
 				() => this.hideGod(),
 			);
 			this.godConsole = kane;
@@ -781,7 +784,7 @@ export class TerminalsGrid {
 				godHomeDir,
 				sessionEnv: this.deps.sessionEnv,
 				onFocusChange: (f) => { this.focusedKane = f ? kane : (this.focusedKane === kane ? null : this.focusedKane); },
-				instanceName: `Kane ${n}`,
+				instanceName: `${this.overseerName} ${n}`,
 				terminalId: String(-n),
 			},
 			() => {
@@ -946,7 +949,7 @@ export class TerminalsGrid {
 	private togglePersonality(): void {
 		this.kanePersonality = !this.kanePersonality;
 		if (this.kanePersonality) {
-			this.notifyKanes(KANE_PERSONA_ON);
+			this.notifyKanes(kanePersonaOn(this.overseerName));
 			this.startPulse();
 		} else {
 			this.notifyKanes(KANE_PERSONA_OFF);

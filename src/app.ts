@@ -89,6 +89,7 @@ async function main(): Promise<void> {
 			sessionsFile: path.join(userData, '.terminal-sessions.json'),
 			bypassPermissions: true,
 			sessionEnv: () => sessionEnvProvider({ workspaceId: id }),
+			overseerName: typeof cfg.overseerName === 'string' ? cfg.overseerName : undefined,
 			toast,
 			promptForTopic,
 			openSettings: () => void settingsPanel.open(appEl),

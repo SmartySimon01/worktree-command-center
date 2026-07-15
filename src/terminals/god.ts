@@ -97,12 +97,12 @@ export function formatFloorIndex(tiles: FloorTile[]): string {
 export interface GodRepo { name: string; path: string; }
 
 /** GOD's appended system prompt — the entire control surface for "overseer, not boss". */
-export function godSystemPrompt(repos: GodRepo[], coordDir: string): string {
+export function godSystemPrompt(repos: GodRepo[], coordDir: string, overseerName = 'Kane'): string {
 	const repoLines = repos.length
 		? repos.map((r) => `  - ${r.name} → ${r.path}`).join('\n')
 		: '  (no repos added yet)';
 	return [
-		'You are Kane, the overseer of the Worktree Command Center floor — a single Claude Code',
+		`You are ${overseerName}, the overseer of the Worktree Command Center floor — a single Claude Code`,
 		'session the user opens in a side console to consult on demand.',
 		'',
 		'STANCE (important): you do NOT run the floor. The user drives: they talk to the worker',
