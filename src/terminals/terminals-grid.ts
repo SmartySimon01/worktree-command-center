@@ -87,7 +87,6 @@ export class TerminalsGrid {
 	private modelSel: HTMLSelectElement | null = null;
 	private effortSel: HTMLSelectElement | null = null;
 	private stageEl: HTMLElement | null = null;
-	private maxBtn: HTMLElement | null = null;
 	private controlsEl: HTMLElement | null = null;
 	private board: BoardView | null = null;
 	private tiles: StageTile[] = [];
@@ -127,7 +126,6 @@ export class TerminalsGrid {
 	private floorTimer: number | null = null;
 	private spotlightTimer: number | null = null;
 	private godOutboxWatcher: import('fs').FSWatcher | null = null;
-	private parentEl: HTMLElement | null = null;
 	private readonly sidecarPath: string;
 	private readonly notifyScriptPath: string;
 	private readonly sessionsFile: string;
@@ -184,7 +182,6 @@ export class TerminalsGrid {
 		await this.loadRepos();
 		const controls = parent.createDiv({ cls: 'cos-terminals-controls' });
 		this.controlsEl = controls;
-		this.parentEl = parent;
 
 		this.repoSel = controls.createEl('select');
 		for (const r of this.repos) this.repoSel.createEl('option', { text: r.name, value: r.name });
@@ -1058,23 +1055,11 @@ export class TerminalsGrid {
 		if (this.searchQuery) this.refreshSearch(); // keep newly-laid-out tiles consistent with the filter
 	}
 
-	private setMaximized(on: boolean): void {
-		this.maximized = on;
-		this.stageEl?.toggleClass('cos-terminals-max', on);
-		this.maxBtn?.setText(on ? '⛶ Restore' : '⛶ Maximize');
-		window.setTimeout(() => { this.applyMaximizeChrome(); this.applyLayout(); }, 40);
-	}
-
 	/** Keep the controls bar (dropdown, Play, View Code, …) visible above the fullscreen
 	 *  stage when maximized, and push the stage down by the bar's height so they don't overlap. */
 	private applyMaximizeChrome(): void {
 		this.controlsEl?.toggleClass('cos-controls-max', this.maximized);
 		if (this.stageEl) this.stageEl.style.top = this.maximized && this.controlsEl ? `${this.controlsEl.offsetHeight}px` : '';
-	}
-
-	/** The tile currently in the center (if any). */
-	private centeredTile(): StageTile | undefined {
-		return this.centeredId === null ? undefined : this.tiles.find((t) => t.tileId === this.centeredId);
 	}
 
 	/** A visible tile's state for the spotlight decision. A permission prompt / selection menu
