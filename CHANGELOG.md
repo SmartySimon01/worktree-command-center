@@ -3,6 +3,17 @@
 All notable changes to Worktree Command Center. Grouped by version; dates are when the work
 landed on `main`.
 
+## Unreleased
+
+**Usage battery fixed for Claude Code 2.1.211's new /usage screen**
+- The CLI now renders /usage inside a tabbed Settings view that is taller than the probe's
+  24-row PTY, so the Fable and credits sections were clipped below the fold and never read.
+  The probe now runs a 50-row PTY.
+- The "Current week (Fable)" label paints in split cell runs (only "Fable)" lands next to its
+  number in the stream), so the parser's full-label anchor never matched; it now anchors on
+  the "Fable)" tail. The probe also waits for two identical consecutive reads before
+  scraping, so a mid-paint screen can't be captured half-rendered.
+
 ## 0.1.0 — 2026-07-14
 
 **Synced with the upstream project** — merged ~36 commits from the original repo, reconciling both
