@@ -5,6 +5,12 @@ landed on `main`.
 
 ## Unreleased
 
+**Chat tile: Up/Down recalls the messages you've sent**
+- The "message the room…" box now behaves like a shell prompt — Arrow Up walks back through
+  messages you've sent (Arrow Down walks forward, then restores whatever you were typing), so
+  you can edit and resend without retyping. Only the room broadcast box has history; the
+  per-agent reply cards are unchanged.
+
 **Usage battery fixed for Claude Code 2.1.211's new /usage screen**
 - The CLI now renders /usage inside a tabbed Settings view that is taller than the probe's
   24-row PTY, so the Fable and credits sections were clipped below the fold and never read.
