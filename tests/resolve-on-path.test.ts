@@ -11,6 +11,10 @@ let dirB: string;
 // POSIX PATH uses ':' as the separator, which collides with the 'C:' drive letter in
 // Windows temp paths — so the POSIX-semantics cases can only be exercised on a POSIX host.
 const posixOnly = it.skipIf(process.platform === 'win32');
+// The positive win32 matches rely on a case-INSENSITIVE filesystem: the shim on disk is
+// `claude.cmd` but PATHEXT (`.CMD`) makes the resolver stat `claude.CMD`. That matches on
+// Windows/macOS but not on a case-sensitive Linux host (e.g. CI), so gate these on Windows.
+const winOnly = it.skipIf(process.platform !== 'win32');
 // PATHEXT is conventionally uppercase, so the resolved string carries that casing
 // (…\claude.CMD) even though the file on disk is claude.cmd. Compare case-insensitively.
 const sameFile = (a: string | null, b: string) => expect((a ?? '').toLowerCase()).toBe(b.toLowerCase());
@@ -29,7 +33,7 @@ afterAll(() => {
 });
 
 describe('resolveOnPath', () => {
-	it('finds the npm claude.cmd shim on Windows via PATHEXT', () => {
+	winOnly('finds the npm claude.cmd shim on Windows via PATHEXT', () => {
 		const env = { PATH: [dirB, dirA].join(';'), PATHEXT: '.COM;.EXE;.BAT;.CMD' };
 		sameFile(resolveOnPath('claude', env, 'win32'), join(dirA, 'claude.cmd'));
 	});
@@ -54,7 +58,7 @@ describe('resolveOnPath', () => {
 		expect(resolveOnPath('claude', { PATH: '' }, 'win32')).toBeNull();
 	});
 
-	it('respects a lowercase Path key (Windows env casing)', () => {
+	winOnly('respects a lowercase Path key (Windows env casing)', () => {
 		const env = { Path: dirA, PATHEXT: '.CMD' };
 		sameFile(resolveOnPath('claude', env, 'win32'), join(dirA, 'claude.cmd'));
 	});
