@@ -6,6 +6,7 @@ import { ipcRenderer } from 'electron';
 // assign the bridge object directly.
 (window as unknown as { wcc: unknown }).wcc = {
 	paths: () => ipcRenderer.invoke('paths'),
+	checkClaude: () => ipcRenderer.invoke('claude:check'),
 	getConfig: () => ipcRenderer.invoke('config:get'),
 	setConfig: (c: unknown) => ipcRenderer.invoke('config:set', c),
 	addFolder: () => ipcRenderer.invoke('addFolder'),

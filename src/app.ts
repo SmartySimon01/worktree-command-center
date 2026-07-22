@@ -6,6 +6,7 @@ import { discoverRepos, mergeRepos } from './workspace';
 import { createGitRepo } from './create-repo';
 import { UsageProbe } from './terminals/usage-probe';
 import { UsageWidget } from './ui/usage-widget';
+import { ClaudeWarning } from './ui/claude-warning';
 import { AttentionWidget } from './ui/attention-widget';
 import { WorkspaceBar } from './ui/workspace-bar';
 import { SettingsPanel } from './ui/settings-panel';
@@ -20,6 +21,7 @@ declare global {
 	interface Window {
 		wcc: {
 			paths(): Promise<{ sidecarDir: string; userData: string; appRoot: string; version: string }>;
+			checkClaude(): Promise<{ found: boolean; path: string | null }>;
 			getConfig(): Promise<any>;
 			setConfig(c: any): Promise<boolean>;
 			addFolder(): Promise<string | null>;
@@ -49,6 +51,14 @@ async function main(): Promise<void> {
 		const addFolderBtn = topBar.createEl('button', { cls: 'wcc-add', text: '➕ Add folder' });
 		const newRepoBtn = topBar.createEl('button', { cls: 'wcc-add', text: '🆕 New repo' });
 		const statusSpan = topBar.createSpan({ cls: 'wcc-status', text: `${repos.length} repos` });
+
+		// Missing-`claude` banner: a full-width strip directly under the top bar. Every terminal
+		// and the usage battery spawn `claude` via the sidecar, so if it isn't on PATH the app
+		// silently does nothing useful — this makes the cause obvious and offers a recheck.
+		const claudeWarnHost = appEl.createDiv({ cls: 'wcc-claude-warn-host' });
+		const claudeWarning = new ClaudeWarning(() => window.wcc.checkClaude());
+		claudeWarning.render(claudeWarnHost);
+		void claudeWarning.refresh();
 
 		// --- workspaces ---
 		let workspaces: Workspace[] = normalizeWorkspaces(cfg.workspaces);

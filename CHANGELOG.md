@@ -5,6 +5,14 @@ landed on `main`.
 
 ## Unreleased
 
+**Warns when the `claude` CLI isn't on PATH**
+- Every terminal and the usage battery launch `claude` through the sidecar, so if it isn't
+  installed or on PATH the app silently does nothing useful — blank terminals and a usage
+  battery stuck on "unavailable". A red banner now appears under the top bar in that case,
+  explaining the cause with the install command and a Recheck button, so you can fix PATH and
+  confirm without relaunching. Detection mirrors how the sidecar actually resolves the command
+  (via `cmd /c` + PATHEXT on Windows), so "not found" means a real spawn would fail.
+
 **Chat tile: Up/Down recalls the messages you've sent**
 - The "message the room…" box now behaves like a shell prompt — Arrow Up walks back through
   messages you've sent (Arrow Down walks forward, then restores whatever you were typing), so

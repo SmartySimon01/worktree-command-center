@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { startRemoteServer } from './remote-server';
 import { pickHosts, accessUrls } from './remote-net';
+import { resolveOnPath } from '../src/resolve-on-path';
 
 const REMOTE_PORT = 7420;
 let win: BrowserWindow | null = null;
@@ -51,6 +52,15 @@ function createWindow(): void {
 
 	// IPC: return resolved paths
 	ipcMain.handle('paths', () => ({ sidecarDir, userData, appRoot, version: app.getVersion() }));
+
+	// IPC: is the `claude` CLI resolvable on PATH? Every worktree terminal and the usage
+	// probe spawn it via the sidecar; if it isn't installed/on PATH they all fail silently,
+	// so the renderer surfaces a warning banner. Re-checked on demand (not cached) so a user
+	// who installs claude and clicks "recheck" gets an up-to-date answer without relaunching.
+	ipcMain.handle('claude:check', () => {
+		const resolved = resolveOnPath('claude');
+		return { found: resolved !== null, path: resolved };
+	});
 
 	// IPC: read config.json from userData
 	ipcMain.handle('config:get', () => {

@@ -160,6 +160,55 @@ html, body {
 .wcc-usage-popval { color: var(--text-normal); }
 .wcc-usage-popnote { margin-top: 4px; padding: 2px 4px; font-size: 10.5px; color: var(--text-faint); }
 
+/* "claude not found on PATH" banner — full-width strip under the top bar. */
+.wcc-claude-warn-host { flex: 0 0 auto; }
+.wcc-claude-warn {
+	display: flex;
+	align-items: flex-start;
+	gap: 12px;
+	padding: 10px 14px;
+	background: color-mix(in srgb, var(--color-red, #d2453e) 16%, var(--background-secondary));
+	border-bottom: 1px solid var(--color-red, #d2453e);
+	color: var(--text-normal);
+}
+.wcc-claude-warn-icon { font-size: 18px; line-height: 1.3; color: var(--color-red, #d2453e); flex: 0 0 auto; }
+.wcc-claude-warn-body { flex: 1 1 auto; min-width: 0; }
+.wcc-claude-warn-title { font-weight: 600; font-size: 13px; }
+.wcc-claude-warn-msg { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.wcc-claude-warn-cmd { font-size: 12px; margin-top: 5px; color: var(--text-muted); }
+.wcc-claude-warn-cmd code {
+	background: var(--background-primary-alt);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	padding: 1px 6px;
+	font-family: var(--font-monospace, monospace);
+	color: var(--text-normal);
+	user-select: all;
+}
+.wcc-claude-warn-actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.wcc-claude-warn-btn {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border: 1px solid transparent;
+	border-radius: 6px;
+	padding: 5px 12px;
+	font-size: 12.5px;
+	font-weight: 600;
+	cursor: pointer;
+}
+.wcc-claude-warn-btn:hover { background: var(--interactive-accent-hover); }
+.wcc-claude-warn-btn:disabled { opacity: .6; cursor: default; }
+.wcc-claude-warn-dismiss {
+	background: transparent;
+	color: var(--text-muted);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	padding: 5px 10px;
+	font-size: 12.5px;
+	cursor: pointer;
+}
+.wcc-claude-warn-dismiss:hover { color: var(--text-normal); }
+
 /* Attention queue badge + dropdown. */
 .wcc-attn { position: relative; }
 .wcc-attn-btn { background: transparent; border: 1px solid var(--background-modifier-border); color: var(--text-muted); cursor: pointer; font-size: 12px; border-radius: 6px; padding: 3px 9px; }
