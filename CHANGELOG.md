@@ -5,6 +5,16 @@ landed on `main`.
 
 ## Unreleased
 
+**CI/CD pipeline (GitHub Actions)**
+- Dev/release tooling (not app behavior). `ci.yml` runs on every PR and push to `main`:
+  typecheck, the full test suite, an esbuild bundle, a lockfile-drift check (via `npm ci`), a
+  guard against committed build artifacts, and — on PRs — a check that `CHANGELOG.md` was
+  updated (opt out with a `skip-changelog` label). `release.yml` fires on `v*` tags: it
+  re-runs the checks, asserts the tag matches `package.json` and has a matching CHANGELOG
+  section, then builds the Windows installer and publishes a GitHub Release. A PR template and
+  `docs/ci-cd.md` document the flow. macOS packaging in CI is left as a follow-up (needs the
+  signing cert as a secret).
+
 **Per-tab attention markers + pop-up notifications**
 - Every terminal tab now shows a distinct marker in its header the moment it needs you, so you
   can see the state of the whole floor at a glance without opening the topbar queue: ⏳ (amber)
