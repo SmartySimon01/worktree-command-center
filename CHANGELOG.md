@@ -28,6 +28,17 @@ landed on `main`.
   the "Fable)" tail. The probe also waits for two identical consecutive reads before
   scraping, so a mid-paint screen can't be captured half-rendered.
 
+**Create a new git repo without leaving the app**
+- A 🆕 New repo button on the toolbar: choose (or create, via the picker's New Folder button) a
+  location, name it, and the app `git init`s a fresh repo with a README + initial commit — so
+  its worktrees have a base branch — then adds it to the workspace like any other repo.
+
+**Repo self-optimization skills (`/self-review`, `/self-review-merge`)**
+- Dev tooling under `.claude/skills` (not app behavior): `/self-review` runs bounded,
+  test-gated optimization passes on a dedicated branch to spend spare end-of-period token
+  budget tidying the code; `/self-review-merge` verifies that branch builds green against
+  `main` and lands it.
+
 ## 0.1.0 — 2026-07-14
 
 **Synced with the upstream project** — merged ~36 commits from the original repo, reconciling both
