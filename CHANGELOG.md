@@ -5,6 +5,17 @@ landed on `main`.
 
 ## Unreleased
 
+**Per-tab attention markers + pop-up notifications**
+- Every terminal tab now shows a distinct marker in its header the moment it needs you, so you
+  can see the state of the whole floor at a glance without opening the topbar queue: ⏳ (amber)
+  when a prompt or menu is waiting on input, 🆘 (red) when a session looks stuck or errored and
+  wants help, and ✓ (green) when it has finished its turn and gone idle. The overseer button
+  (Alpha/Kane) glows amber or red the same way when the overseer console itself is waiting on
+  you or stuck.
+- A colour-coded toast fires once whenever a tab (or the overseer) *transitions* into needing
+  you — deduped so a state that persists is announced a single time, and seeded silently on
+  restore so reopening a workspace never bursts a stack of notifications.
+
 **Warns when the `claude` CLI isn't on PATH**
 - Every terminal and the usage battery launch `claude` through the sidecar, so if it isn't
   installed or on PATH the app silently does nothing useful — blank terminals and a usage
@@ -27,6 +38,17 @@ landed on `main`.
   number in the stream), so the parser's full-label anchor never matched; it now anchors on
   the "Fable)" tail. The probe also waits for two identical consecutive reads before
   scraping, so a mid-paint screen can't be captured half-rendered.
+
+**Create a new git repo without leaving the app**
+- A 🆕 New repo button on the toolbar: choose (or create, via the picker's New Folder button) a
+  location, name it, and the app `git init`s a fresh repo with a README + initial commit — so
+  its worktrees have a base branch — then adds it to the workspace like any other repo.
+
+**Repo self-optimization skills (`/self-review`, `/self-review-merge`)**
+- Dev tooling under `.claude/skills` (not app behavior): `/self-review` runs bounded,
+  test-gated optimization passes on a dedicated branch to spend spare end-of-period token
+  budget tidying the code; `/self-review-merge` verifies that branch builds green against
+  `main` and lands it.
 
 ## 0.1.0 — 2026-07-14
 

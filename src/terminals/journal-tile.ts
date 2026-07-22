@@ -308,6 +308,7 @@ export class JournalTile implements StageTile {
   setDimmed(on: boolean): void { this.el?.toggleClass('cos-term-dim', on); }
   setSelected(_on: boolean): void { /* journals are never chat members */ }
   setBadge(_text: string | null): void { /* no keyboard-shortcut badge for journals */ }
+  setAttention(_kind: unknown): void { /* journals have no session state to flag */ }
   focus(): void { this.textarea?.focus(); }
   blur(): void { this.textarea?.blur(); }
   recentOutput(): string { return this.textarea?.value ?? this.currentText; }

@@ -20,7 +20,8 @@ import { GodConsole } from './god-console';
 import { slug as godSlug, formatFloorSnapshot, formatFloorIndex, parseOutboxMessage, resolveTellTarget, remapWatchers, EFFORT_LEVELS, type OutboxMessage } from './god';
 import { looksLikeMenu, looksErrored, looksBusy } from './prompt-detect';
 import { looksLikePrompt } from './chat-room';
-import { classifyAttention, type AttentionItem } from './attention';
+import { classifyAttention, classifyOne, attentionKind, type AttentionItem, type AttentionKind } from './attention';
+import type { ToastVariant } from '../ui/toast';
 import { JournalTile } from './journal-tile';
 import { JournalStore } from './journal-store';
 import { FormatProbe } from './format-probe';
@@ -42,7 +43,7 @@ export interface GridDeps {
 	bypassPermissions: boolean;
 	sessionEnv?: () => Record<string, string>;
 	overseerName?: string;   // configurable name of the overseer console (default 'Kane')
-	toast: (msg: string) => void;
+	toast: (msg: string, variant?: ToastVariant) => void;
 	promptForTopic: (title: string, placeholder: string, initial?: string, okLabel?: string) => Promise<string | null>;
 	openSettings: () => void;
 }
@@ -123,6 +124,10 @@ export class TerminalsGrid {
 	private watchers: Array<{ target: string; note: string }> = [];
 	private pendingTask = new Map<number, string>();
 	private idleTiles = new Set<number>();
+	// Per-tab (+ Alpha, keyed -1) last attention bucket — so the per-tab markers update and a pop-up
+	// notification fires only on a TRANSITION into a new bucket, never repeatedly while it persists.
+	// `undefined` = never seen yet (seeds silently, so a floor restore doesn't burst toasts).
+	private lastAttn = new Map<number, AttentionKind | 'none'>();
 	private stageWrapEl: HTMLElement | null = null;
 	private floorTimer: number | null = null;
 	private spotlightTimer: number | null = null;
@@ -1100,6 +1105,7 @@ export class TerminalsGrid {
 	 *  tile: a tile that needs you wins, and when everyone is thinking the grid drops to equal
 	 *  size (no spotlight). Manual clicks/cycles still set the center directly. */
 	private autoCenter(): void {
+		this.updateAttention(); // markers + notifications refresh every tick, regardless of centering
 		if (Date.now() < this.holdUntil) return; // manual-switch hold — the user chose a tile, let it be
 		const want = decideCenter({
 			tiles: this.tiles.map((t) => ({ id: t.tileId, state: this.spotlightState(t) })),
@@ -1112,6 +1118,50 @@ export class TerminalsGrid {
 		if (want === this.centeredId) return;          // no change → don't re-lay-out (avoids flicker)
 		if (want === null) { this.centeredId = null; this.applyLayout(); return; } // equal grid
 		this.doCenter(want);
+	}
+
+	/** Refresh the per-tab attention markers and fire a one-shot notification whenever a tab (or
+	 *  Alpha) transitions into needing you — distinct markers/toasts for input, help, and done.
+	 *  Runs every autoCenter tick (~1s). De-duped through `lastAttn` so a persistent state is
+	 *  flagged once, not every tick; first sighting seeds silently so a restore doesn't spam. */
+	private updateAttention(): void {
+		const seen = new Set<number>();
+		// Visible worker tabs: full input / help / done markers.
+		for (const t of this.tiles) {
+			seen.add(t.tileId);
+			const o = t.recentOutput();
+			const idle = this.idleTiles.has(t.tileId) && !looksBusy(o);
+			const kind = t.isJournal ? null : attentionKind(classifyOne(o, idle));
+			t.setAttention(kind);
+			this.noteAttention(t.tileId, kind, t.name);
+		}
+		// Alpha (the overseer console): input / help only — it's never "done" like a worker.
+		if (this.godConsole) {
+			seen.add(-1);
+			const ko = this.godConsole.recentOutput();
+			let kind = attentionKind(classifyOne(ko, false)); // idle=false → never 'done'
+			if (kind === 'done') kind = null;
+			this.godBtn?.setAttribute('data-attn', kind ?? '');
+			this.noteAttention(-1, kind, this.overseerName);
+		} else {
+			this.godBtn?.setAttribute('data-attn', '');
+		}
+		// Forget tabs that have gone away, so a reused id can notify again.
+		for (const id of [...this.lastAttn.keys()]) if (!seen.has(id)) this.lastAttn.delete(id);
+	}
+
+	/** Record a tab's current bucket; toast when it CHANGES into a flagging bucket. */
+	private noteAttention(id: number, kind: AttentionKind | null, name: string): void {
+		const now = kind ?? 'none';
+		const prev = this.lastAttn.get(id);
+		this.lastAttn.set(id, now);
+		if (prev === undefined || prev === now || !kind) return; // seed silently / unchanged / cleared
+		const MSG: Record<AttentionKind, string> = {
+			input: `⏳ ${name} needs your input`,
+			help: `🆘 ${name} needs help`,
+			done: `✓ ${name} finished`,
+		};
+		this.deps.toast(MSG[kind], kind);
 	}
 
 	private handleReady(t: TerminalTile): void {

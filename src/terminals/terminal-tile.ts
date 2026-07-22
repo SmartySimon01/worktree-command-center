@@ -11,6 +11,7 @@ import { ctrlClickActivator, openExternalUrl } from './links';
 import { promptForConfirm } from '../ui/prompt-dialog';
 import { stripAnsi } from './usage-parse';
 import type { StageTile } from './stage-tile';
+import type { AttentionKind } from './attention';
 
 export interface TerminalTileOpts {
 	tileId: number;
@@ -47,6 +48,7 @@ export class TerminalTile implements StageTile {
 	private resizeObs: ResizeObserver | null = null;
 	private fitThrottle: FitThrottle | null = null;
 	private badgeEl: HTMLElement | null = null;
+	private attnEl: HTMLElement | null = null;
 	private lockBtnEl: HTMLButtonElement | null = null;
 	private remoteBtnEl: HTMLButtonElement | null = null;
 	private remoteOn = false;
@@ -70,6 +72,8 @@ export class TerminalTile implements StageTile {
 		this.el = parent.createDiv({ cls: 'cos-term-tile' });
 		const head = this.el.createDiv({ cls: 'cos-term-head' });
 		this.badgeEl = head.createSpan({ cls: 'cos-term-badge' });
+		this.attnEl = head.createSpan({ cls: 'cos-term-attn' });
+		this.attnEl.style.display = 'none';
 		this.nameEl = head.createSpan({ cls: 'cos-term-name', text: this.displayName, attr: { title: 'Double-click to rename' } });
 		this.nameEl.addEventListener('dblclick', (e) => { e.stopPropagation(); this.opts.onRequestRename?.(this, this.displayName); });
 		// Right-clustered controls: remote, lock, minimize (hide), close.
@@ -230,6 +234,23 @@ export class TerminalTile implements StageTile {
 		if (!this.badgeEl) return;
 		this.badgeEl.setText(label ?? '');
 		this.badgeEl.style.display = label ? 'inline-block' : 'none';
+	}
+
+	/** Show a distinct persistent marker in the header when this tile needs the user:
+	 *  ⏳ needs input · 🆘 needs help · ✓ done. Cleared (hidden) while it's still working. */
+	setAttention(kind: AttentionKind | null): void {
+		if (!this.attnEl) return;
+		const M: Record<AttentionKind, { icon: string; title: string }> = {
+			input: { icon: '⏳', title: 'Waiting for you — a prompt or menu needs an answer' },
+			help: { icon: '🆘', title: 'Needs help — this session looks stuck or errored' },
+			done: { icon: '✓', title: 'Done — finished its turn and idle' },
+		};
+		if (!kind) { this.attnEl.style.display = 'none'; this.attnEl.className = 'cos-term-attn'; return; }
+		const m = M[kind];
+		this.attnEl.setText(m.icon);
+		this.attnEl.setAttribute('title', m.title);
+		this.attnEl.className = `cos-term-attn attn-${kind}`;
+		this.attnEl.style.display = 'inline-block';
 	}
 
 	setCentered(on: boolean): void {
